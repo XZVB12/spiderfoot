@@ -1,66 +1,69 @@
 # -*- coding: utf-8 -*-
 # -------------------------------------------------------------------------------
-# Name:         sfp_ethereum
+# Name:         sfp_hashes
 # Purpose:      SpiderFoot plug-in for scanning retreived content by other
-#               modules (such as sfp_spider) and identifying ethereum addresses.
+#               modules (such as sfp_spider) and identifying hashes
 #
 # Author:      Steve Micallef <steve@binarypool.com>
 #
-# Created:     03/09/2018
-# Copyright:   (c) Steve Micallef 2018
+# Created:     24/01/2020
+# Copyright:   (c) Steve Micallef 2020
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
 import re
-
 from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
 
-class sfp_ethereum(SpiderFootPlugin):
-    """Ethereum Address Finder:Footprint,Investigate,Passive:Content Analysis::Identify ethereum addresses in scraped webpages."""
+class sfp_hashes(SpiderFootPlugin):
+    """Hash Extractor:Footprint,Investigate,Passive:Content Analysis::Identify MD5 and SHA hashes in web content, files and more."""
 
     # Default options
-    opts = {}
+    opts = {
+        # options specific to this module
+    }
 
-    results = None
+    # Option descriptions
+    optdescs = {
+    }
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
-        self.results = self.tempStorage()
 
-        for opt in list(userOpts.keys()):
+        for opt in userOpts.keys():
             self.opts[opt] = userOpts[opt]
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return ["TARGET_WEB_CONTENT"]
+        return ["TARGET_WEB_CONTENT", "BASE64_DATA",
+                "LEAKSITE_CONTENT", "RAW_DNS_RECORDS", 
+                "RAW_FILE_META_DATA"]
 
     # What events this module produces
     # This is to support the end user in selecting modules based on events
     # produced.
     def producedEvents(self):
-        return ["ETHEREUM_ADDRESS"]
+        return ["HASH"]
 
     # Handle events sent to this module
     def handleEvent(self, event):
         eventName = event.eventType
         srcModuleName = event.module
         eventData = event.data
-        sourceData = self.sf.hashstring(eventData)
-
-        if sourceData in self.results:
-            return None
-        else:
-            self.results[sourceData] = True
 
         self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
 
-        # thanks to https://stackoverflow.com/questions/21683680/regex-to-match-ethereum-addresses
-        matches = re.findall("[\s:=\>](0x[a-fA-F0-9]{40})", eventData)
-        for m in matches:
-            self.sf.debug("Ethereum address match: " + m)
-            evt = SpiderFootEvent("ETHEREUM_ADDRESS", m, self.__name__, event)
+        hashes = self.sf.parseHashes(eventData)
+        myres = list()
+        for hashtup in hashes:
+            hashalgo, hashval = hashtup
+
+            evt = SpiderFootEvent("HASH", "[" + hashalgo + "] " + hashval, self.__name__, event)
+            if event.moduleDataSource:
+                evt.moduleDataSource = event.moduleDataSource
+            else:
+                evt.moduleDataSource = "Unknown"
             self.notifyListeners(evt)
 
         return None
 
-# End of sfp_ethereum class
+# End of sfp_hashes class

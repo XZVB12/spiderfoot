@@ -15,7 +15,7 @@ import re
 from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
 
 class sfp_email(SpiderFootPlugin):
-    """E-Mail:Footprint,Investigate,Passive:Content Analysis::Identify e-mail addresses in any obtained data."""
+    """E-Mail Address Extractor:Footprint,Investigate,Passive:Content Analysis::Identify e-mail addresses in any obtained data."""
 
     # Default options
     opts = {
@@ -62,7 +62,7 @@ class sfp_email(SpiderFootPlugin):
             email = email.lower()
 
             # Get the domain and strip potential ending .
-            mailDom = email.lower().split('@')[1].strip('.')
+            mailDom = email.split('@')[1].strip('.')
             if not self.sf.validHost(mailDom, self.opts['_internettlds']):
                 self.sf.debug("Skipping " + email + " as not a valid e-mail.")
                 return None

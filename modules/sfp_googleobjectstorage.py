@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # -------------------------------------------------------------------------------
-# Name:         sfp_s3bucket
-# Purpose:      SpiderFoot plug-in for identifying potential S3 buckets related to
-#               the target.
+# Name:         sfp_googleobjectstorage
+# Purpose:      SpiderFoot plug-in for identifying potential Google Object Storage
+#               buckets related to the target.
 #
 # Author:      Steve Micallef <steve@binarypool.com>
 #
-# Created:     24/07/2016
-# Copyright:   (c) Steve Micallef 2016
+# Created:     24/01/2020
+# Copyright:   (c) Steve Micallef 2020
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
@@ -15,29 +15,28 @@ import threading
 import time
 from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
 
-class sfp_s3bucket(SpiderFootPlugin):
-    """Amazon S3 Bucket Finder:Footprint,Passive:Crawling and Scanning::Search for potential Amazon S3 buckets associated with the target and attempt to list their contents."""
+class sfp_googleobjectstorage(SpiderFootPlugin):
+    """Google Object Storage Finder:Footprint,Passive:Crawling and Scanning::Search for potential Google Object Storage buckets associated with the target and attempt to list their contents."""
+
 
     # Default options
     opts = {
-        "endpoints": "s3.amazonaws.com,s3-external-1.amazonaws.com,s3-us-west-1.amazonaws.com,s3-us-west-2.amazonaws.com,s3.ap-south-1.amazonaws.com,s3-ap-south-1.amazonaws.com,s3.ap-northeast-2.amazonaws.com,s3-ap-northeast-2.amazonaws.com,s3-ap-southeast-1.amazonaws.com,s3-ap-southeast-2.amazonaws.com,s3-ap-northeast-1.amazonaws.com,s3.eu-central-1.amazonaws.com,s3-eu-central-1.amazonaws.com,s3-eu-west-1.amazonaws.com,s3-sa-east-1.amazonaws.com",
         "suffixes": "test,dev,web,beta,bucket,space,files,content,data,prod,staging,production,stage,app,media,development,-test,-dev,-web,-beta,-bucket,-space,-files,-content,-data,-prod,-staging,-production,-stage,-app,-media,-development",
         "_maxthreads": 20
     }
 
     # Option descriptions
     optdescs = {
-        "endpoints": "Different S3 endpoints to check where buckets may exist, as per http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region",
         "suffixes": "List of suffixes to append to domains tried as bucket names"
     }
 
     results = None
-    s3results = dict()
+    gosresults = dict()
     lock = None
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
-        self.s3results = dict()
+        self.gosresults = dict()
         self.results = self.tempStorage()
         self.lock = threading.Lock()
 
@@ -63,14 +62,14 @@ class sfp_s3bucket(SpiderFootPlugin):
         else:
             if "ListBucketResult" in res['content']:
                 with self.lock:
-                    self.s3results[url] = res['content'].count("<Key>")
+                    self.gosresults[url] = res['content'].count("<Key>")
             else:
                 with self.lock:
-                    self.s3results[url] = 0
+                    self.gosresults[url] = 0
 
     def threadSites(self, siteList):
         ret = list()
-        self.s3results = dict()
+        self.gosresults = dict()
         running = True
         i = 0
         t = []
@@ -80,7 +79,7 @@ class sfp_s3bucket(SpiderFootPlugin):
                 return None
 
             self.sf.info("Spawning thread to check bucket: " + site)
-            t.append(threading.Thread(name='thread_sfp_s3buckets_' + site,
+            t.append(threading.Thread(name='thread_sfp_googleobjectstorage_' + site,
                                       target=self.checkSite, args=(site,)))
             t[i].start()
             i += 1
@@ -89,7 +88,7 @@ class sfp_s3bucket(SpiderFootPlugin):
         while running:
             found = False
             for rt in threading.enumerate():
-                if rt.name.startswith("thread_sfp_s3buckets_"):
+                if rt.name.startswith("thread_sfp_googleobjectstorage_"):
                     found = True
 
             if not found:
@@ -98,7 +97,7 @@ class sfp_s3bucket(SpiderFootPlugin):
             time.sleep(0.25)
 
         # Return once the scanning has completed
-        return self.s3results
+        return self.gosresults
 
     def batchSites(self, sites):
         i = 0
@@ -137,7 +136,7 @@ class sfp_s3bucket(SpiderFootPlugin):
         self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
 
         if eventName == "LINKED_URL_EXTERNAL":
-            if ".amazonaws.com" in eventData:
+            if ".storage.googleapis.com" in eventData:
                 b = self.sf.urlFQDN(eventData)
                 evt = SpiderFootEvent("CLOUD_STORAGE_BUCKET", b, self.__name__, event)
                 self.notifyListeners(evt)
@@ -146,15 +145,14 @@ class sfp_s3bucket(SpiderFootPlugin):
         targets = [ eventData.replace('.', ''), self.sf.domainKeyword(eventData, self.opts['_internettlds']) ]
         urls = list()
         for t in targets:
-            for e in self.opts['endpoints'].split(','):
-                suffixes = [''] + self.opts['suffixes'].split(',')
-                for s in suffixes:
-                    if self.checkForStop():
-                        return None
+            suffixes = [''] + self.opts['suffixes'].split(',')
+            for s in suffixes:
+                if self.checkForStop():
+                    return None
 
-                    b = t + s + "." + e
-                    url = "https://" + b
-                    urls.append(url)
+                b = t + s + ".storage.googleapis.com"
+                url = "https://" + b
+                urls.append(url)
 
         # Batch the scans
         ret = self.batchSites(urls)
@@ -164,9 +162,9 @@ class sfp_s3bucket(SpiderFootPlugin):
             self.notifyListeners(evt)
             if bucket[2] != "0":
                 bucketname = bucket[1].replace("//", "")
-                evt = SpiderFootEvent("CLOUD_STORAGE_BUCKET_OPEN", bucketname + ": " + bucket[2] + " files found.",
+                evt = SpiderFootEvent("CLOUD_STORAGE_BUCKET_OPEN", bucketname + ": " + bucket[2] + " files found.", 
                                       self.__name__, evt)
                 self.notifyListeners(evt)
 
 
-# End of sfp_s3bucket class
+# End of sfp_googleobjectstorage class
