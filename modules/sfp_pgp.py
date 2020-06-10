@@ -16,7 +16,7 @@ import re
 from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
 
 class sfp_pgp(SpiderFootPlugin):
-    """PGP Key Look-up:Footprint,Investigate,Passive:Public Registries::Look up e-mail addresses in PGP public key servers."""
+    """PGP Key Servers:Footprint,Investigate,Passive:Public Registries::Look up e-mail addresses in PGP public key servers."""
 
     results = None
 
@@ -85,7 +85,7 @@ class sfp_pgp(SpiderFootPlugin):
                     evttype = "EMAILADDR"
 
                     mailDom = email.lower().split('@')[1]
-                    if not self.getTarget().matches(mailDom, includeChildren=True, includeParents=True):
+                    if not self.getTarget().matches(mailDom):
                         evttype = "AFFILIATE_EMAILADDR"
 
                     self.sf.info("Found e-mail address: " + email)

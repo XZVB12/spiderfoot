@@ -1,66 +1,47 @@
 # -*- coding: utf-8 -*-
 # -------------------------------------------------------------------------------
-# Name:         sfp_nothink
-# Purpose:      Checks if an ASN, IP or domain is malicious.
+# Name:         sfp_botvrij
+# Purpose:      Checks if a domain is malicious.
 #
 # Author:       steve@binarypool.com
 #
-# Created:     14/12/2013
-# Copyright:   (c) Steve Micallef, 2013
+# Created:     16/05/2020
+# Copyright:   (c) Steve Micallef, 2020
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-import re
 from netaddr import IPAddress, IPNetwork
+import re
 
 from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
 
 malchecks = {
-    'Nothink.org SSH Scanners': {
-        'id': 'nothinkssh',
+   'botvrij.eu Domain Blocklist': {
+        'id': '_botvrij',
         'type': 'list',
-        'checks': ['ip', 'netblock', 'domain'],
-        'url': 'http://www.nothink.org/blacklist/blacklist_ssh_week.txt'
-    },
-    'Nothink.org Malware IRC Traffic': {
-        'id': 'nothinkirc',
-        'type': 'list',
-        'checks': ['ip', 'netblock', 'domain'],
-        'url': 'http://www.nothink.org/blacklist/blacklist_malware_irc.txt'
-    },
-    'Nothink.org Malware HTTP Traffic': {
-        'id': 'nothinkhttp',
-        'type': 'list',
-        'checks': ['ip', 'netblock', 'domain'],
-        'url': 'http://www.nothink.org/blacklist/blacklist_malware_http.txt'
+        'checks': ['domain'],
+        'url': 'https://www.botvrij.eu/data/blocklist/blocklist_full.csv',
+        'regex': '{0},.*'
     }
 }
 
-class sfp_nothink(SpiderFootPlugin):
-    """Nothink.org:Investigate,Passive:Reputation Systems::Check if a host/domain, netblock or IP is malicious according to Nothink.org."""
+
+class sfp_botvrij(SpiderFootPlugin):
+    """botvrij.eu:Investigate,Passive:Reputation Systems::Check if a domain is malicious according to botvrij.eu."""
 
     # Default options
     opts = {
-        'nothinkssh': True,
-        'nothinkirc': True,
-        'nothinkhttp': True,
+        '_botvrij': True,
         'checkaffiliates': True,
         'checkcohosts': True,
-        'cacheperiod': 18,
-        'checknetblocks': True,
-        'checksubnets': True
+        'cacheperiod': 18
     }
 
     # Option descriptions
     optdescs = {
-        'nothinkssh': 'Enable Nothink.org SSH attackers check?',
-        'nothinkirc': 'Enable Nothink.org Malware DNS traffic check?',
-        'nothinkhttp': 'Enable Nothink.org Malware HTTP traffic check?',
         'checkaffiliates': "Apply checks to affiliates?",
         'checkcohosts': "Apply checks to sites found to be co-hosted on the target's IP?",
-        'cacheperiod': "Hours to cache list data before re-fetching.",
-        'checknetblocks': "Report if any malicious IPs are found within owned netblocks?",
-        'checksubnets': "Check if any malicious IPs are found within the same subnet of the target?"
+        'cacheperiod': "Hours to cache list data before re-fetching."
     }
 
     # Be sure to completely clear any class variables in setup()
@@ -82,8 +63,8 @@ class sfp_nothink(SpiderFootPlugin):
     # * = be notified about all events.
     def watchedEvents(self):
         return ["INTERNET_NAME", "IP_ADDRESS",
-                "NETBLOCK_MEMBER", "AFFILIATE_INTERNET_NAME", "AFFILIATE_IPADDR",
-                "CO_HOSTED_SITE", "NETBLOCK_OWNER"]
+                "AFFILIATE_INTERNET_NAME", "AFFILIATE_IPADDR",
+                "CO_HOSTED_SITE"]
 
     # What events this module produces
     # This is to support the end user in selecting modules based on events
@@ -91,7 +72,7 @@ class sfp_nothink(SpiderFootPlugin):
     def producedEvents(self):
         return ["MALICIOUS_IPADDR", "MALICIOUS_INTERNET_NAME",
                 "MALICIOUS_AFFILIATE_IPADDR", "MALICIOUS_AFFILIATE_INTERNET_NAME",
-                "MALICIOUS_SUBNET", "MALICIOUS_COHOST", "MALICIOUS_NETBLOCK"]
+                "MALICIOUS_COHOST"]
 
     # Check the regexps to see whether the content indicates maliciousness
     def contentMalicious(self, content, goodregex, badregex):
@@ -241,10 +222,6 @@ class sfp_nothink(SpiderFootPlugin):
         if eventName == 'AFFILIATE_IPADDR' \
                 and not self.opts.get('checkaffiliates', False):
             return None
-        if eventName == 'NETBLOCK_OWNER' and not self.opts.get('checknetblocks', False):
-            return None
-        if eventName == 'NETBLOCK_MEMBER' and not self.opts.get('checksubnets', False):
-            return None
 
         for check in list(malchecks.keys()):
             cid = malchecks[check]['id']
@@ -271,13 +248,6 @@ class sfp_nothink(SpiderFootPlugin):
                     if eventName == 'CO_HOSTED_SITE':
                         evtType = 'MALICIOUS_COHOST'
 
-                if eventName == 'NETBLOCK_OWNER':
-                    typeId = 'netblock'
-                    evtType = 'MALICIOUS_NETBLOCK'
-                if eventName == 'NETBLOCK_MEMBER':
-                    typeId = 'netblock'
-                    evtType = 'MALICIOUS_SUBNET'
-
                 url = self.lookupItem(cid, typeId, eventData)
                 if self.checkForStop():
                     return None
@@ -290,4 +260,4 @@ class sfp_nothink(SpiderFootPlugin):
 
         return None
 
-# End of sfp_nothink class
+# End of sfp_botvrij class

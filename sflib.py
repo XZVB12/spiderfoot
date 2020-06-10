@@ -15,6 +15,7 @@ from stem import Signal
 from stem.control import Controller
 import inspect
 import hashlib
+import html
 import urllib.request, urllib.parse, urllib.error
 import json
 import re
@@ -38,6 +39,7 @@ from networkx.readwrite.gexf import GEXFWriter
 from datetime import datetime
 from bs4 import BeautifulSoup, SoupStrainer
 from copy import deepcopy
+import io
 
 # For hiding the SSL warnings coming from the requests lib
 import urllib3
@@ -439,6 +441,9 @@ class SpiderFoot:
 
     # Retreive data from the cache
     def cacheGet(self, label, timeoutHrs):
+        if label is None:
+            return None
+
         pathLabel = hashlib.sha224(label.encode('utf-8')).hexdigest()
         cacheFile = self.cachePath() + "/" + pathLabel
         try:
@@ -729,9 +734,17 @@ class SpiderFoot:
         # http://abc.com will split to ['http:', '', 'abc.com']
         return baseurl.split('/')[count].lower()
 
-    # Extract the keyword (the domain without the TLD or any subdomains)
-    # from a domain.
     def domainKeyword(self, domain, tldList):
+        """Extract the keyword (the domain without the TLD or any subdomains) from a domain.
+
+        Args:
+            domain (str): The domain to check.
+            tldList (str): The list of TLDs based on the Mozilla public list.
+
+        Returns:
+            str: The keyword
+        """
+
         # Strip off the TLD
         tld = '.'.join(self.hostDomain(domain.lower(), tldList).split('.')[1:])
         ret = domain.lower().replace('.' + tld, '')
@@ -742,67 +755,137 @@ class SpiderFoot:
         else:
             return ret
 
-    # Extract the keywords (the domains without the TLD or any subdomains)
-    # from a list of domains.
+    # TODO: remove this function
     def domainKeywords(self, domainList, tldList):
+        """Extract the keywords (the domains without the TLD or any subdomains) from a list of domains.
+
+        Wraps the domainKeyword function for people who are too lazy to write a loop.
+        Does not validate input. Does not check for duplicates.
+
+        Args:
+            domainList (list): The list of domains to check.
+            tldList (str): The list of TLDs based on the Mozilla public list.
+
+        Returns:
+            list: List of keywords
+        """
+
         arr = list()
         for domain in domainList:
-            # Strip off the TLD
-            tld = '.'.join(self.hostDomain(domain.lower(), tldList).split('.')[1:])
-            ret = domain.lower().replace('.' + tld, '')
-
-            # If the user supplied a domain with a sub-domain, return the second part
-            if '.' in ret:
-                arr.append(ret.split('.')[-1])
-            else:
-                arr.append(ret)
+            arr.append(self.domainKeyword(domain, tldList))
 
         self.debug("Keywords: " + str(arr))
         return arr
 
-    # Obtain the domain name for a supplied hostname
-    # tldList needs to be an array based on the Mozilla public list
     def hostDomain(self, hostname, tldList):
+        """Obtain the domain name for a supplied hostname.
+
+        Args:
+            hostname (str): The hostname to check.
+            tldList (str): The list of TLDs based on the Mozilla public list.
+
+        Returns:
+            str: The domain name.
+        """
+
+        if not tldList:
+            return None
+        if not hostname:
+            return None
+
         ps = PublicSuffixList(tldList)
         return ps.get_public_suffix(hostname)
 
-    # Is the host a valid host (some filenames look like hosts)
     def validHost(self, hostname, tldList):
-        # First basic content checks
+        """Check if the provided string is a valid hostname with a valid public suffix TLD.
+
+        Args:
+            hostname (str): The hostname to check.
+            tldList (str): The list of TLDs based on the Mozilla public list.
+
+        Returns:
+            bool
+        """
+
+        if not tldList:
+            return False
+        if not hostname:
+            return False
+
         if "." not in hostname:
             return False
 
         if not re.match("^[a-z0-9-\.]*$", hostname, re.IGNORECASE):
             return False
 
-        # Finally check if it's on a valid TLD
         ps = PublicSuffixList(tldList)
         sfx = ps.get_public_suffix(hostname, strict=True)
         return sfx != None
 
-    # Given a possible hostname, check if it's a domain name
-    # By checking whether it rests atop a TLD.
-    # e.g. www.example.com = False because tld of hostname is com,
-    # and www.example has a . in it.
     def isDomain(self, hostname, tldList):
+        """Check if the provided hostname string is a valid domain name.
+
+        Given a possible hostname, check if it's a domain name
+        By checking whether it rests atop a TLD.
+        e.g. www.example.com = False because tld of hostname is com,
+        and www.example has a . in it.
+
+        Args:
+            hostname (str): The hostname to check.
+            tldList (str): The list of TLDs based on the Mozilla public list.
+
+        Returns:
+            bool
+        """
+
+        if not tldList:
+            return False
+        if not hostname:
+            return False
+
         ps = PublicSuffixList(tldList)
         suffix = ps.get_public_suffix(hostname)
         return hostname == suffix
 
-    # Simple way to verify IPv4 addresses.
     def validIP(self, address):
+        """Check if the provided string is a valid IPv4 address.
+
+        Args:
+            address (str): The IPv4 address to check.
+
+        Returns:
+            bool
+        """
+
         if not address:
             return False
         return netaddr.valid_ipv4(address)
 
-    # Simple way to verify IPv6 addresses.
     def validIP6(self, address):
+        """Check if the provided string is a valid IPv6 address.
+
+        Args:
+            address (str): The IPv6 address to check.
+
+        Returns:
+            bool
+        """
+
         if not address:
             return False
         return netaddr.valid_ipv6(address)
 
     # Simple way to verify netblock.
     def validIpNetwork(self, cidr):
+        """Check if the provided string is a valid CIDR netblock.
+
+        Args:
+            cidr (str): The netblock to check.
+
+        Returns:
+            bool
+        """
+
         try:
             if '/' in str(cidr) and netaddr.IPNetwork(str(cidr)).size > 0:
                 return True
@@ -852,9 +935,8 @@ class SpiderFoot:
 
         for d in dicts:
             try:
-                wdct = open(self.myPath() + "/dicts/ispell/" + d + ".dict", 'r')
-                dlines = wdct.readlines()
-                wdct.close()
+                with io.open(self.myPath() + "/dicts/ispell/" + d + ".dict", 'r', encoding='utf8', errors='ignore') as wdct:
+                    dlines = wdct.readlines()
             except BaseException as e:
                 self.debug("Could not read dictionary: " + str(e))
                 continue
@@ -1102,7 +1184,141 @@ class SpiderFoot:
             emails.add(match)
 
         return list(emails)
+    
+    # Find all credit card numbers with the supplied content
+    #
+    # Extracts numbers with lengths ranging from 13 - 19 digits
+    #
+    # Checks the numbers using Luhn's algorithm to verify if
+    # the number is a valid credit card number or not
+    #
+    # Returns a list
+    def parseCreditCards(self,data):
+        creditCards = set() 
+        
+        # Remove whitespace from data. 
+        # Credit cards might contain spaces between them 
+        # which will cause regex mismatch
+        data = data.replace(" ", "")
+        
+        # Extract all numbers with lengths ranging from 13 - 19 digits
+        possibleCCRegex = "\d{13,19}"
+        matches = re.findall(possibleCCRegex, data)
 
+        # Verify each extracted number using Luhn's algorithm
+        for match in matches:
+
+            if int(match) == 0:
+                self.debug("Skipped invalid credit card number: " + match)
+                continue
+
+            ccNumber = match
+
+            ccNumberTotal = 0
+            isSecondDigit = False
+
+            for digit in ccNumber[::-1]:
+                d = int(digit)
+                if isSecondDigit:
+                    d *= 2
+                ccNumberTotal += int(d / 10)
+                ccNumberTotal += d % 10
+
+                isSecondDigit = not isSecondDigit
+            if ccNumberTotal % 10 == 0:
+                self.debug("Found credit card number: " + match)
+                creditCards.add(match)
+            else:
+                self.debug("Skipped invalid credit card number: " + match)
+        return list(creditCards)
+        
+    # Find all IBAN numbers with the supplied content
+    #
+    # Extracts possible IBAN Numbers using a generic regex 
+    #
+    # Checks whether the possible IBAN number is valid or not
+    # Using country-wise length check and Mod 97 algorithm
+    #
+    # Returns a list
+    def parseIBANNumbers(self, data):
+        ibanNumbers = set()
+
+        # Dictionary of country codes and their respective IBAN lengths
+        ibanCountryLengths = {
+            "AL" : 28, "AD" : 24, "AT" : 20, "AZ" : 28,
+            "ME" : 22, "BH" : 22, "BY" : 28, "BE" : 16,
+            "BA" : 20, "BR" : 29, "BG" : 22, "CR" : 22,
+            "HR" : 21, "CY" : 28, "CZ" : 24, "DK" : 18,
+            "DO" : 28, "EG" : 29, "SV" : 28, "FO" : 18,
+            "FI" : 18, "FR" : 27, "GE" : 22, "DE" : 22,
+            "GI" : 23, "GR" : 27, "GL" : 18, "GT" : 28,
+            "VA" : 22, "HU" : 28, "IS" : 26, "IQ" : 23,
+            "IE" : 22, "IL" : 27, "JO" : 30, "KZ" : 20,
+            "XK" : 20, "KW" : 30, "LV" : 21, "LB" : 28,
+            "LI" : 21, "LT" : 20, "LU" : 20, "MT" : 31,
+            "MR" : 27, "MU" : 30, "MD" : 24, "MC" : 27,
+            "DZ" : 24, "AO" : 25, "BJ" : 28, "VG" : 24,
+            "BF" : 27, "BI" : 16, "CM" : 27, "CV" : 25,
+            "CG" : 27, "EE" : 20, "GA" : 27, "GG" : 22,
+            "IR" : 26, "IM" : 22, "IT" : 27, "CI" : 28,
+            "JE" : 22, "MK" : 19, "MG" : 27, "ML" : 28,
+            "MZ" : 25, "NL" : 18, "NO" : 15, "PK" : 24,
+            "PS" : 29, "PL" : 28, "PT" : 25, "QA" : 29,
+            "RO" : 24, "LC" : 32, "SM" : 27, "ST" : 25,
+            "SA" : 24, "SN" : 28, "RS" : 22, "SC" : 31,
+            "SK" : 24, "SI" : 19, "ES" : 24, "CH" : 21,
+            "TL" : 23, "TN" : 24, "TR" : 26, "UA" : 29,
+            "AE" : 23, "GB" : 22, "SE" : 24
+        }
+
+        # Remove whitespace from data. 
+        # IBAN Numbers might contain spaces between them 
+        # which will cause regex mismatch
+        data = data.replace(" ", "")
+
+        # Extract alphanumeric characters of lengths ranging from 16 to 31
+        possibleIBANRegex = "[A-Za-z0-9]{16,31}"
+        matches = re.findall(possibleIBANRegex, data)
+
+        for match in matches:  
+            match = match.upper()
+            ibanNumber = match
+
+            countryCode = ibanNumber[0:2]
+
+            if countryCode not in ibanCountryLengths.keys():
+                # Invalid IBAN Number due to country code not existing in dictionary
+                self.debug("Skipped invalid IBAN number: " + ibanNumber)
+                continue
+            
+            # Using Mod 97 algorithm to verify if IBAN Number is valid
+            if len(ibanNumber) == ibanCountryLengths[countryCode]:
+                # Move the first 4 characters to the end of the string 
+                match = match[4:] + match[0:4]  
+                
+                for character in match: 
+                    # Check if character is a letter
+                    if character.isalpha():
+                        # Replace letters to number  
+                        # where A = 10, B = 11, ...., Z = 35
+                        match = match.replace(character, str((ord(character) - 65) + 10))                     
+
+                if int(match) % 97 == 1:
+                    # IBAN Number is valid 
+                    self.debug("Found IBAN number: " + match)
+                    ibanNumbers.add(ibanNumber)
+                else:
+                    # Invalid IBAN Number due to failed Mod 97 operation
+                    self.debug("Skipped invalid IBAN number: " + ibanNumber)
+                    continue                    
+            else:
+                # Invalid IBAN Number due to length mismatch
+                self.debug("Skipped invalid IBAN number: " + ibanNumber)
+                continue
+
+        return list(ibanNumbers)
+
+    
     # Return a PEM for a DER
     def sslDerToPem(self, der):
         return ssl.DER_cert_to_PEM_cert(der)
@@ -1203,6 +1419,11 @@ class SpiderFoot:
 
         return ret
 
+    # Extract all URLs from a string
+    # https://tools.ietf.org/html/rfc3986#section-3.3
+    def extractUrls(self, content):
+        return re.findall("(https?://[a-zA-Z0-9-\.:]+/[\-\._~!\$&'\(\)\*\+\,\;=:@/a-zA-Z0-9]*)", html.unescape(content))
+
     # Find all URLs within the supplied content. This does not fetch any URLs!
     # A dictionary will be returned, where each link will have the keys
     # 'source': The URL where the link was obtained from
@@ -1212,7 +1433,10 @@ class SpiderFoot:
     # be 'http://xyz.com/abc' with the 'original' attribute set to '/abc'
     def parseLinks(self, url, data, domains):
         returnLinks = dict()
-        urlsRel = []
+
+        if data is None or len(data) == 0:
+            self.debug("parseLinks() called with no data to parse.")
+            return returnLinks
 
         if type(domains) is str:
             domains = [domains]
@@ -1234,9 +1458,7 @@ class SpiderFoot:
         if proto == None:
             proto = "http"
 
-        if data is None or len(data) == 0:
-            self.debug("parseLinks() called with no data to parse.")
-            return None
+        urlsRel = []
 
         try:
             for t in list(tags.keys()):
@@ -1246,12 +1468,13 @@ class SpiderFoot:
                         urlsRel.append(lnk[tags[t]])
         except BaseException as e:
             self.error("Error parsing with BeautifulSoup: " + str(e), False)
-            return None
+            return returnLinks
 
         # Loop through all the URLs/links found
         for link in urlsRel:
             if type(link) != str:
                 link = str(link)
+            link = link.strip()
             linkl = link.lower()
             absLink = None
 
@@ -1350,6 +1573,8 @@ class SpiderFoot:
             #self.debug("fetchUrl: No url")
             return None
 
+        url = url.strip()
+
         proxies = dict()
         if self.opts['_socks1type']:
             neverProxyNames = [ self.opts['_socks2addr'] ]
@@ -1409,7 +1634,11 @@ class SpiderFoot:
                 hdr = self.getSession().head(url, headers=header, proxies=proxies,
                                     verify=verify, timeout=timeout)
                 size = int(hdr.headers.get('content-length', 0))
-                result['realurl'] = hdr.headers.get('location', url)
+                newloc = hdr.headers.get('location', url).strip()
+                # Relative re-direct
+                if newloc.startswith("/") or newloc.startswith("../"):
+                    newloc = self.urlBaseUrl(url) + newloc
+                result['realurl'] = newloc
                 result['code'] = str(hdr.status_code)
 
                 if headOnly:
@@ -1880,6 +2109,9 @@ class SpiderFootTarget(object):
     # Or, if a user searched for an IP address, a module
     # might supply the hostname as an alias.
     def setAlias(self, value, typeName):
+        if value is None:
+            return
+            
         if {'type': typeName, 'value': value} in self.targetAliases:
             return None
 
@@ -1936,6 +2168,9 @@ class SpiderFootTarget(object):
     # * includeChildren = False means you don't consider a value
     # that is a child of the target to be a tight relation.
     def matches(self, value, includeParents=False, includeChildren=True):
+        if value is None:
+            return False
+
         value = value.lower()
 
         value = value.decode("utf-8") if type(value) == bytes else value
@@ -2095,7 +2330,9 @@ class PublicSuffixList(object):
         if len(parent) == 1:
             parent.append({})
 
-        assert len(parent) == 2
+        if len(parent) != 2:
+            return None
+
         negate, children = parent
 
         child = parts.pop()
