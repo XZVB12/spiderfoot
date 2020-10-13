@@ -11,11 +11,48 @@
 # -------------------------------------------------------------------------------
 
 import json
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_citadel(SpiderFootPlugin):
-    """Leak-Lookup:Footprint,Investigate,Passive:Leaks, Dumps and Breaches:apikey:Searches Leak-Lookup.com's database of breaches."""
+
+    meta = {
+        'name': "Leak-Lookup",
+        'summary': "Searches Leak-Lookup.com's database of breaches.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Leaks, Dumps and Breaches"],
+        'dataSource': {
+            'website': "https://leak-lookup.com/",
+            'model': "FREE_AUTH_UNLIMITED",
+            'references': [
+                "https://leak-lookup.com/api",
+                "https://leak-lookup.com/databases"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://leak-lookup.com",
+                "Register an account",
+                "Login to your account",
+                "Click on 'Account'",
+                "Click on 'API'",
+                "The API key is listed under 'API Key'"
+            ],
+            'favIcon': "https://leak-lookup.com/favicon.png",
+            'logo': "https://leak-lookup.com/favicon.png",
+            'description': "Leak-Lookup allows you to search across thousands of data breaches "
+            "to stay on top of credentials that may have been compromised in the wild.\n"
+            "The creators came together when they realized they had a vast trove of data "
+            "that could be of great value to pen-testers seeking weaknesses in client passwords "
+            "and those concerned about which of their credentials have been leaked into the wild.\n"
+            "Always looking forward, Leak-Lookup invests all of its profits back into securing the "
+            "latest data breaches and leaks / dumps as they become available, ensuring that "
+            "as well as historical data, Leak-Lookup becomes a field leader in credential monitoring.",
+        }
+    }
 
     # Default options
     opts = {
@@ -73,8 +110,8 @@ class sfp_citadel(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug('Error processing JSON response: ' + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -85,14 +122,14 @@ class sfp_citadel(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.errorState:
             return None
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already searched.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
 
         self.results[eventData] = True
@@ -106,7 +143,7 @@ class sfp_citadel(SpiderFootPlugin):
         message = data.get('message')
 
         if error == 'true':
-            self.sf.error("Error encountered processing {}: {}".format( eventData, message ), False)
+            self.sf.error(f"Error encountered processing {eventData}: {message}")
             if "MISSING API" in message:
                 self.errorState = True
                 return None
@@ -116,8 +153,8 @@ class sfp_citadel(SpiderFootPlugin):
             return None
 
         for site in message:
-            self.sf.info("Found Leak-Lookup entry for {}: {}".format( eventData, site ) )
-            evt = SpiderFootEvent( "EMAILADDR_COMPROMISED", "{} [{}]".format( eventData, site ), self.__name__, event )
+            self.sf.info(f"Found Leak-Lookup entry for {eventData}: {site}")
+            evt = SpiderFootEvent("EMAILADDR_COMPROMISED", f"{eventData} [{site}]", self.__name__, event)
             self.notifyListeners(evt)
 
 # End of sfp_citadel class

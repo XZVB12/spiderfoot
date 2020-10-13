@@ -11,15 +11,13 @@
 # -------------------------------------------------------------------------------
 
 import re
-from netaddr import IPAddress, IPNetwork
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 malchecks = {
     'Watchguard Reputation Authority Lookup': {
         'id': '_watchguard',
-        'type': 'query',
-        'checks': [ 'ip' ],
+        'checks': ['ip'],
         'url': 'http://reputationauthority.org/lookup?ip={0}',
         'badregex': ['.*>[6-9][0-9]/100 </td>.*', '.*>100/100 </td>.*'],
         'goodregex': []
@@ -28,11 +26,29 @@ malchecks = {
 
 
 class sfp_watchguard(SpiderFootPlugin):
-    """Watchguard:Investigate,Passive:Reputation Systems::Check if an IP is malicious according to Watchguard's reputationauthority.org."""
+
+    meta = {
+        'name': "Watchguard",
+        'summary': "Check if an IP is malicious according to Watchguard's reputationauthority.org.",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "http://reputationauthority.org/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "http://www.reputationauthority.org/faq.php"
+            ],
+            'favIcon': "http://reputationauthority.org/images/favicon.ico",
+            'logo': "http://reputationauthority.org/images/ripley/footer_logo.gif",
+            'description': "WatchGuard ReputationAuthority is the world's most effective reputation service for email and web security, "
+            "providing critical protection and a better performing network to businesses, government organizations, "
+            "ISPs, and other security vendors.",
+        }
+    }
 
     # Default options
     opts = {
-        '_watchguard': True,
         'checkaffiliates': True
     }
 
@@ -65,7 +81,7 @@ class sfp_watchguard(SpiderFootPlugin):
     # This is to support the end user in selecting modules based on events
     # produced.
     def producedEvents(self):
-        return ["MALICIOUS_IPADDR", "MALICIOUS_AFFILIATE_IPADDR" ]
+        return ["MALICIOUS_IPADDR", "MALICIOUS_AFFILIATE_IPADDR"]
 
     # Check the regexps to see whether the content indicates maliciousness
     def contentMalicious(self, content, goodregex, badregex):
@@ -89,97 +105,20 @@ class sfp_watchguard(SpiderFootPlugin):
 
     # Look up 'query' type sources
     def resourceQuery(self, id, target, targetType):
-        self.sf.debug("Querying " + id + " for maliciousness of " + target)
+        self.sf.debug(f"Querying {id} for maliciousness of {target}")
+
         for check in list(malchecks.keys()):
             cid = malchecks[check]['id']
-            if id == cid and malchecks[check]['type'] == "query":
+            if id == cid:
                 url = str(malchecks[check]['url'])
                 res = self.sf.fetchUrl(url.format(target), timeout=self.opts['_fetchtimeout'], useragent=self.opts['_useragent'])
+
                 if res['content'] is None:
-                    self.sf.error("Unable to fetch " + url.format(target), False)
+                    self.sf.error("Unable to fetch " + url.format(target))
                     return None
-                if self.contentMalicious(res['content'],
-                                         malchecks[check]['goodregex'],
-                                         malchecks[check]['badregex']):
+
+                if self.contentMalicious(res['content'], malchecks[check]['goodregex'], malchecks[check]['badregex']):
                     return url.format(target)
-
-        return None
-
-    # Look up 'list' type resources
-    def resourceList(self, id, target, targetType):
-        targetDom = ''
-        # Get the base domain if we're supplied a domain
-        if targetType == "domain":
-            targetDom = self.sf.hostDomain(target, self.opts['_internettlds'])
-
-        for check in list(malchecks.keys()):
-            cid = malchecks[check]['id']
-            if id == cid and malchecks[check]['type'] == "list":
-                data = dict()
-                url = malchecks[check]['url']
-                data['content'] = self.sf.cacheGet("sfmal_" + cid, self.opts.get('cacheperiod', 0))
-                if data['content'] is None:
-                    data = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'], useragent=self.opts['_useragent'])
-                    if data['content'] is None:
-                        self.sf.error("Unable to fetch " + url, False)
-                        return None
-                    else:
-                        self.sf.cachePut("sfmal_" + cid, data['content'])
-
-                # If we're looking at netblocks
-                if targetType == "netblock":
-                    iplist = list()
-                    # Get the regex, replace {0} with an IP address matcher to
-                    # build a list of IP.
-                    # Cycle through each IP and check if it's in the netblock.
-                    if 'regex' in malchecks[check]:
-                        rx = malchecks[check]['regex'].replace("{0}",
-                                                               "(\d+\.\d+\.\d+\.\d+)")
-                        pat = re.compile(rx, re.IGNORECASE)
-                        self.sf.debug("New regex for " + check + ": " + rx)
-                        for line in data['content'].split('\n'):
-                            grp = re.findall(pat, line)
-                            if len(grp) > 0:
-                                #self.sf.debug("Adding " + grp[0] + " to list.")
-                                iplist.append(grp[0])
-                    else:
-                        iplist = data['content'].split('\n')
-
-                    for ip in iplist:
-                        if len(ip) < 8 or ip.startswith("#"):
-                            continue
-                        ip = ip.strip()
-
-                        try:
-                            if IPAddress(ip) in IPNetwork(target):
-                                self.sf.debug(ip + " found within netblock/subnet " +
-                                              target + " in " + check)
-                                return url
-                        except Exception as e:
-                            self.sf.debug("Error encountered parsing: " + str(e))
-                            continue
-
-                    return None
-
-                # If we're looking at hostnames/domains/IPs
-                if 'regex' not in malchecks[check]:
-                    for line in data['content'].split('\n'):
-                        if line == target or (targetType == "domain" and line == targetDom):
-                            self.sf.debug(target + "/" + targetDom + " found in " + check + " list.")
-                            return url
-                else:
-                    # Check for the domain and the hostname
-                    try:
-                        rxDom = str(malchecks[check]['regex']).format(targetDom)
-                        rxTgt = str(malchecks[check]['regex']).format(target)
-                        for line in data['content'].split('\n'):
-                            if (targetType == "domain" and re.match(rxDom, line, re.IGNORECASE)) or \
-                                    re.match(rxTgt, line, re.IGNORECASE):
-                                self.sf.debug(target + "/" + targetDom + " found in " + check + " list.")
-                                return url
-                    except BaseException as e:
-                        self.sf.debug("Error encountered parsing 2: " + str(e))
-                        continue
 
         return None
 
@@ -187,12 +126,8 @@ class sfp_watchguard(SpiderFootPlugin):
         for check in list(malchecks.keys()):
             cid = malchecks[check]['id']
             if cid == resourceId and itemType in malchecks[check]['checks']:
-                self.sf.debug("Checking maliciousness of " + target + " (" +
-                              itemType + ") with: " + cid)
-                if malchecks[check]['type'] == "query":
-                    return self.resourceQuery(cid, target, itemType)
-                if malchecks[check]['type'] == "list":
-                    return self.resourceList(cid, target, itemType)
+                self.sf.debug(f"Checking maliciousness of {target} ({itemType}) with: {cid}")
+                return self.resourceQuery(cid, target, itemType)
 
         return None
 
@@ -202,66 +137,64 @@ class sfp_watchguard(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + ", already checked.")
-            return None
-        else:
-            self.results[eventData] = True
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
+
+        self.results[eventData] = True
 
         if eventName == 'CO_HOSTED_SITE' and not self.opts.get('checkcohosts', False):
-            return None
+            return
         if eventName == 'AFFILIATE_IPADDR' \
                 and not self.opts.get('checkaffiliates', False):
-            return None
+            return
         if eventName == 'NETBLOCK_OWNER' and not self.opts.get('checknetblocks', False):
-            return None
+            return
         if eventName == 'NETBLOCK_MEMBER' and not self.opts.get('checksubnets', False):
-            return None
+            return
 
         for check in list(malchecks.keys()):
             cid = malchecks[check]['id']
-            # If the module is enabled..
-            if self.opts[cid]:
-                if eventName in ['IP_ADDRESS', 'AFFILIATE_IPADDR']:
-                    typeId = 'ip'
-                    if eventName == 'IP_ADDRESS':
-                        evtType = 'MALICIOUS_IPADDR'
-                    else:
-                        evtType = 'MALICIOUS_AFFILIATE_IPADDR'
 
-                if eventName in ['BGP_AS_OWNER', 'BGP_AS_MEMBER']:
-                    typeId = 'asn'
-                    evtType = 'MALICIOUS_ASN'
+            if eventName in ['IP_ADDRESS', 'AFFILIATE_IPADDR']:
+                typeId = 'ip'
+                if eventName == 'IP_ADDRESS':
+                    evtType = 'MALICIOUS_IPADDR'
+                else:
+                    evtType = 'MALICIOUS_AFFILIATE_IPADDR'
 
-                if eventName in ['INTERNET_NAME', 'CO_HOSTED_SITE',
-                                 'AFFILIATE_INTERNET_NAME', ]:
-                    typeId = 'domain'
-                    if eventName == "INTERNET_NAME":
-                        evtType = "MALICIOUS_INTERNET_NAME"
-                    if eventName == 'AFFILIATE_INTERNET_NAME':
-                        evtType = 'MALICIOUS_AFFILIATE_INTERNET_NAME'
-                    if eventName == 'CO_HOSTED_SITE':
-                        evtType = 'MALICIOUS_COHOST'
+            if eventName in ['BGP_AS_OWNER', 'BGP_AS_MEMBER']:
+                typeId = 'asn'
+                evtType = 'MALICIOUS_ASN'
 
-                if eventName == 'NETBLOCK_OWNER':
-                    typeId = 'netblock'
-                    evtType = 'MALICIOUS_NETBLOCK'
-                if eventName == 'NETBLOCK_MEMBER':
-                    typeId = 'netblock'
-                    evtType = 'MALICIOUS_SUBNET'
+            if eventName in ['INTERNET_NAME', 'CO_HOSTED_SITE',
+                             'AFFILIATE_INTERNET_NAME']:
+                typeId = 'domain'
+                if eventName == "INTERNET_NAME":
+                    evtType = "MALICIOUS_INTERNET_NAME"
+                if eventName == 'AFFILIATE_INTERNET_NAME':
+                    evtType = 'MALICIOUS_AFFILIATE_INTERNET_NAME'
+                if eventName == 'CO_HOSTED_SITE':
+                    evtType = 'MALICIOUS_COHOST'
 
-                url = self.lookupItem(cid, typeId, eventData)
-                if self.checkForStop():
-                    return None
+            if eventName == 'NETBLOCK_OWNER':
+                typeId = 'netblock'
+                evtType = 'MALICIOUS_NETBLOCK'
+            if eventName == 'NETBLOCK_MEMBER':
+                typeId = 'netblock'
+                evtType = 'MALICIOUS_SUBNET'
 
-                # Notify other modules of what you've found
-                if url is not None:
-                    text = check + " [" + eventData + "]\n" + "<SFURL>" + url + "</SFURL>"
-                    evt = SpiderFootEvent(evtType, text, self.__name__, event)
-                    self.notifyListeners(evt)
+            url = self.lookupItem(cid, typeId, eventData)
 
-        return None
+            if self.checkForStop():
+                return
+
+            # Notify other modules of what you've found
+            if url is not None:
+                text = f"{check} [{eventData}]\n<SFURL>{url}</SFURL>"
+                evt = SpiderFootEvent(evtType, text, self.__name__, event)
+                self.notifyListeners(evt)
 
 # End of sfp_watchguard class

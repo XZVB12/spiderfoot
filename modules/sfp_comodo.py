@@ -12,11 +12,35 @@
 # -------------------------------------------------------------------------------
 
 import dns.resolver
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_comodo(SpiderFootPlugin):
-    """Comodo:Investigate,Passive:Reputation Systems::Check if a host would be blocked by Comodo DNS"""
+
+    meta = {
+        'name': "Comodo",
+        'summary': "Check if a host would be blocked by Comodo DNS",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://www.comodo.com/secure-dns/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://cdome.comodo.com/pdf/Datasheet-Dome-Shield.pdf?af=7639#_ga=2.9039612.872056824.1587327669-445877257.1587327669",
+                "https://wiki.comodo.com/frontend/web/category/dome-shield?af=7639#_ga=2.9039612.872056824.1587327669-445877257.1587327669",
+                "https://www.comodo.com/secure-dns/secure-dns-assets/dowloads/ccs-dome-shield-whitepaper-threat-intelligence.pdf?af=7639",
+                "https://www.comodo.com/secure-dns/secure-dns-assets/dowloads/domeshield-all-use-cases.pdf?af=7639"
+            ],
+            'favIcon': "https://www.comodo.com/favicon.ico",
+            'logo': "https://www.comodo.com/new-assets/images/logo.png",
+            'description': "100% cloud-based, load-balanced, geo-distributed, highly available Anycast DNS infrastructure hosted in 25+ countries.\n"
+            "Cloud-based web security delivered at the DNS level, first layer for everything internet connected.\n"
+            "Per company, location, endpoint, mobile device, IP, subnet and user.\n"
+            "Get real-time web visibility for everything internet connected and schedule reports to be sent to your email.",
+        }
+    }
 
     # Default options
     opts = {
@@ -48,13 +72,13 @@ class sfp_comodo(SpiderFootPlugin):
 
     def queryAddr(self, qaddr):
         res = dns.resolver.Resolver()
-        res.nameservers = [ "8.26.56.26", "8.20.247.20" ]
+        res.nameservers = ["8.26.56.26", "8.20.247.20"]
 
         try:
-            addrs = res.query(qaddr)
+            addrs = res.resolve(qaddr)
             self.sf.debug("Addresses returned: " + str(addrs))
-        except BaseException as e:
-            self.sf.debug("Unable to resolve " + qaddr)
+        except Exception:
+            self.sf.debug(f"Unable to resolve {qaddr}")
             return False
 
         if addrs:
@@ -69,7 +93,7 @@ class sfp_comodo(SpiderFootPlugin):
         parentEvent = event
         resolved = False
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -80,7 +104,7 @@ class sfp_comodo(SpiderFootPlugin):
         try:
             if self.sf.resolveHost(eventData):
                 resolved = True
-        except BaseException as e:
+        except Exception:
             return None
 
         if resolved:

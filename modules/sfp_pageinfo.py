@@ -14,7 +14,7 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 # Indentify pages that use Javascript libs, handle passwords, have forms,
 # permit file uploads and more to come.
@@ -24,15 +24,23 @@ regexps = dict({
     'URL_PASSWORD': list(['<input.*type=[\"\']*password']),
     'URL_UPLOAD': list(['type=[\"\']*file']),
     'URL_JAVA_APPLET': list(['<applet ']),
-    'URL_FLASH': list(['\.swf[ \'\"]'])
+    'URL_FLASH': list([r'\.swf[ \'\"]'])
 })
 
 
 class sfp_pageinfo(SpiderFootPlugin):
-    """Page Information:Footprint,Investigate,Passive:Content Analysis::Obtain information about web pages (do they take passwords, do they contain forms, etc.)"""
+
+    meta = {
+        'name': "Page Information",
+        'summary': "Obtain information about web pages (do they take passwords, do they contain forms, etc.)",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
+    optdescs = {}
 
     results = None
 
@@ -62,26 +70,26 @@ class sfp_pageinfo(SpiderFootPlugin):
         # event.sourceEvent.data set to the URL of the source.
         if "sfp_spider" not in event.module:
             self.sf.debug("Ignoring web content from " + event.module)
-            return None
+            return
 
         eventName = event.eventType
         srcModuleName = event.module
         eventData = event.data
         eventSource = event.actualSource
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # We aren't interested in describing pages that are not hosted on
         # our base domain.
         if not self.getTarget().matches(self.sf.urlFQDN(eventSource)):
             self.sf.debug("Not gathering page info for external site " + eventSource)
-            return None
+            return
 
-        if eventSource not in self.results:
-            self.results[eventSource] = list()
-        else:
+        if eventSource in self.results:
             self.sf.debug("Already checked this page for a page type, skipping.")
-            return None
+            return
+
+        self.results[eventSource] = list()
 
         # Check the configured regexps to determine the page type
         for regexpGrp in regexps:
@@ -108,12 +116,14 @@ class sfp_pageinfo(SpiderFootPlugin):
         matches = re.findall(pat, eventData)
         if len(matches) > 0:
             for match in matches:
-                if '://' in match and not self.getTarget().matches(self.sf.urlFQDN(match)):
-                    self.sf.debug("Externally hosted Javascript found at: " + match)
-                    evt = SpiderFootEvent("PROVIDER_JAVASCRIPT", match,
-                                          self.__name__, event)
-                    self.notifyListeners(evt)
-
-        return None
+                if '://' not in match:
+                    continue
+                if not self.sf.urlFQDN(match):
+                    continue
+                if self.getTarget().matches(self.sf.urlFQDN(match)):
+                    continue
+                self.sf.debug("Externally hosted JavaScript found at: %s" % match)
+                evt = SpiderFootEvent("PROVIDER_JAVASCRIPT", match, self.__name__, event)
+                self.notifyListeners(evt)
 
 # End of sfp_pageinfo class

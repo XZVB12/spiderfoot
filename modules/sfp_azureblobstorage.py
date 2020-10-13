@@ -11,13 +11,26 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
+import random
 import threading
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_azureblobstorage(SpiderFootPlugin):
-    """Azure Blob Finder:Footprint,Passive:Crawling and Scanning::Search for potential Azure blobs associated with the target and attempt to list their contents."""
 
+    meta = {
+        'name': "Azure Blob Finder",
+        'summary': "Search for potential Azure blobs associated with the target and attempt to list their contents.",
+        'flags': [""],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Crawling and Scanning"],
+        'dataSource': {
+            'website': "https://azure.microsoft.com/en-in/services/storage/blobs/",
+            'model': "FREE_NOAUTH_UNLIMITED"
+        }
+    }
 
     # Default options
     opts = {
@@ -27,7 +40,8 @@ class sfp_azureblobstorage(SpiderFootPlugin):
 
     # Option descriptions
     optdescs = {
-        "suffixes": "List of suffixes to append to domains tried as blob storage names"
+        "suffixes": "List of suffixes to append to domains tried as blob storage names",
+        "_maxthreads": "Maximum threads"
     }
 
     results = None
@@ -60,7 +74,6 @@ class sfp_azureblobstorage(SpiderFootPlugin):
                 self.s3results[url] = True
 
     def threadSites(self, siteList):
-        ret = list()
         self.s3results = dict()
         running = True
         i = 0
@@ -71,7 +84,8 @@ class sfp_azureblobstorage(SpiderFootPlugin):
                 return None
 
             self.sf.info("Spawning thread to check bucket: " + site)
-            t.append(threading.Thread(name='thread_sfp_azureblobstorages_' + site,
+            tname = str(random.SystemRandom().randint(0, 999999999))
+            t.append(threading.Thread(name='thread_sfp_azureblobstorages_' + tname,
                                       target=self.checkSite, args=(site,)))
             t[i].start()
             i += 1
@@ -99,7 +113,7 @@ class sfp_azureblobstorage(SpiderFootPlugin):
         for site in sites:
             if i >= self.opts['_maxthreads']:
                 data = self.threadSites(siteList)
-                if data == None:
+                if data is None:
                     return res
 
                 for ret in list(data.keys()):
@@ -120,26 +134,30 @@ class sfp_azureblobstorage(SpiderFootPlugin):
         eventData = event.data
 
         if eventData in self.results:
-            return None
-        else:
-            self.results[eventData] = True
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.results[eventData] = True
+
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventName == "LINKED_URL_EXTERNAL":
             if ".blob.core.windows.net" in eventData:
                 b = self.sf.urlFQDN(eventData)
                 evt = SpiderFootEvent("CLOUD_STORAGE_BUCKET", b, self.__name__, event)
                 self.notifyListeners(evt)
-            return None
+            return
 
-        targets = [ eventData.replace('.', ''), self.sf.domainKeyword(eventData, self.opts['_internettlds']) ]
+        targets = [eventData.replace('.', '')]
+        kw = self.sf.domainKeyword(eventData, self.opts['_internettlds'])
+        if kw:
+            targets.append(kw)
+
         urls = list()
         for t in targets:
             suffixes = [''] + self.opts['suffixes'].split(',')
             for s in suffixes:
                 if self.checkForStop():
-                    return None
+                    return
 
                 b = t + s + ".blob.core.windows.net"
                 url = "https://" + b

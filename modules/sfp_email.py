@@ -11,11 +11,17 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-import re
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_email(SpiderFootPlugin):
-    """E-Mail Address Extractor:Footprint,Investigate,Passive:Content Analysis::Identify e-mail addresses in any obtained data."""
+
+    meta = {
+        'name': "E-Mail Address Extractor",
+        'summary': "Identify e-mail addresses in any obtained data.",
+        'useCases': ["Passive", "Investigate", "Footprint"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {
@@ -45,7 +51,7 @@ class sfp_email(SpiderFootPlugin):
     # This is to support the end user in selecting modules based on events
     # produced.
     def producedEvents(self):
-        return ["EMAILADDR", "AFFILIATE_EMAILADDR"]
+        return ["EMAILADDR", "EMAILADDR_GENERIC", "AFFILIATE_EMAILADDR"]
 
     # Handle events sent to this module
     def handleEvent(self, event):
@@ -53,7 +59,7 @@ class sfp_email(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         emails = self.sf.parseEmails(eventData)
         myres = list()
@@ -74,6 +80,9 @@ class sfp_email(SpiderFootPlugin):
             if eventName.startswith("AFFILIATE_"):
                 evttype = "AFFILIATE_EMAILADDR"
 
+            if not evttype.startswith("AFFILIATE_") and email.split("@")[0] in self.opts['_genericusers'].split(","):
+                evttype = "EMAILADDR_GENERIC"
+
             self.sf.info("Found e-mail address: " + email)
             mail = email.strip('.')
 
@@ -89,7 +98,5 @@ class sfp_email(SpiderFootPlugin):
             else:
                 evt.moduleDataSource = "Unknown"
             self.notifyListeners(evt)
-
-        return None
 
 # End of sfp_email class

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # -------------------------------------------------------------------------------
 # Name:         sfp_base64
-# Purpose:      Identifies (best-effort) Base64-encoded strings in content and URLs.
+# Purpose:      Identifies (best-effort) Base64-encoded strings in URLs.
 #
 # Author:      Steve Micallef <steve@binarypool.com>
 #
@@ -11,12 +11,20 @@
 
 import base64
 import re
+import urllib.parse
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_base64(SpiderFootPlugin):
-    """Base64 Decoder:Investigate,Passive:Content Analysis::Identify Base64-encoded strings in any content and URLs, often revealing interesting hidden information."""
+
+    meta = {
+        'name': "Base64 Decoder",
+        'summary': "Identify Base64-encoded strings in URLs, often revealing interesting hidden information.",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {
@@ -37,11 +45,9 @@ class sfp_base64(SpiderFootPlugin):
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return ["LINKED_URL_INTERNAL", "TARGET_WEB_CONTENT"]
+        return ["LINKED_URL_INTERNAL"]
 
     # What events this module produces
-    # This is to support the end user in selecting modules based on events
-    # produced.
     def producedEvents(self):
         return ["BASE64_DATA"]
 
@@ -51,31 +57,41 @@ class sfp_base64(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
-        pat = re.compile("([A-Za-z0-9+\/]+\=\=|[A-Za-z0-9+\/]+\=)")
-        m = re.findall(pat, eventData)
+        decoded_data = urllib.parse.unquote(eventData)
+
+        # Note: this will miss base64 encoded strings with no padding
+        # (strings which do not end with '=' or '==')
+        pat = re.compile(r"([A-Za-z0-9+\/]+={1,2})")
+        m = re.findall(pat, decoded_data)
         for match in m:
             if self.checkForStop():
-                return None
+                return
 
             minlen = int(self.opts['minlength'])
-            if len(match) >= minlen:
-                caps = sum(1 for c in match if c.isupper())
-                # Base64-encoded strings don't look like normal strings
-                if caps < (minlen/4):
-                    return None
-                self.sf.info("Found Base64 string: " + match)
-                if type(match) != str:
-                    string = str(match)
+            if len(match) < minlen:
+                continue
 
-                try:
-                    string += " (" + base64.b64decode(match) + ")"
-                    evt = SpiderFootEvent("BASE64_DATA", string, self.__name__, event)
-                    self.notifyListeners(evt)
-                except BaseException as e:
-                    self.sf.debug("Unable to base64-decode a string.")
+            # Base64-encoded strings don't look like normal strings
+            caps = sum(1 for c in match if c.isupper())
+            if caps < (minlen / 4):
+                continue
 
-        return None
+            if isinstance(match, str):
+                string = match
+            else:
+                string = str(match)
+
+            self.sf.info(f"Found Base64 string: {match}")
+
+            try:
+                string += f" ({base64.b64decode(match).decode('utf-8')})"
+            except Exception as e:
+                self.sf.debug(f"Unable to base64-decode string: {e}")
+                continue
+
+            evt = SpiderFootEvent("BASE64_DATA", string, self.__name__, event)
+            self.notifyListeners(evt)
 
 # End of sfp_base64 class

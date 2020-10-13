@@ -11,13 +11,22 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-import whois
 import ipwhois
+import whois
 from netaddr import IPAddress
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_whois(SpiderFootPlugin):
-    """Whois:Footprint,Investigate,Passive:Public Registries::Perform a WHOIS look-up on domain names and owned netblocks."""
+
+    meta = {
+        'name': "Whois",
+        'summary': "Perform a WHOIS look-up on domain names and owned netblocks.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Public Registries"]
+    }
 
     # Default options
     opts = {
@@ -39,7 +48,7 @@ class sfp_whois(SpiderFootPlugin):
     # What events is this module interested in for input
     def watchedEvents(self):
         return ["DOMAIN_NAME", "DOMAIN_NAME_PARENT", "NETBLOCK_OWNER",
-                "CO_HOSTED_SITE_DOMAIN", "AFFILIATE_DOMAIN_NAME", "SIMILARDOMAIN" ]
+                "CO_HOSTED_SITE_DOMAIN", "AFFILIATE_DOMAIN_NAME", "SIMILARDOMAIN"]
 
     # What events this module produces
     # This is to support the end user in selecting modules based on events
@@ -56,11 +65,11 @@ class sfp_whois(SpiderFootPlugin):
         eventData = event.data
 
         if eventData in self.results:
-            return None
-        else:
-            self.results[eventData] = True
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.results[eventData] = True
+
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         try:
             data = None
@@ -77,16 +86,16 @@ class sfp_whois(SpiderFootPlugin):
                 if whoisdata:
                     data = str(whoisdata)
             if not data:
-                self.sf.error("Unable to perform WHOIS on " + eventData, False)
-                return None
-        except BaseException as e:
-            self.sf.error("Unable to perform WHOIS on " + eventData + ": " + str(e), False)
-            return None
+                self.sf.error("Unable to perform WHOIS on " + eventData)
+                return
+        except Exception as e:
+            self.sf.error("Unable to perform WHOIS on " + eventData + ": " + str(e))
+            return
 
         # This is likely to be an error about being throttled rather than real data
         if len(data) < 250:
-            self.sf.error("Throttling from Whois is probably happening.", False)
-            return None
+            self.sf.error("Throttling from Whois is probably happening.")
+            return
 
         if eventName.startswith("DOMAIN_NAME"):
             typ = "DOMAIN_WHOIS"

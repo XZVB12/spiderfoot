@@ -14,12 +14,32 @@
 import json
 import math
 import time
-import re
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_grep_app(SpiderFootPlugin):
-    """grep.app:Footprint,Investigate,Passive:Search Engines::Search grep.app API for links and emails related to the specified domain."""
+
+    meta = {
+        'name': "grep.app",
+        'summary': "Search grep.app API for links and emails related to the specified domain.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://grep.app/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [],
+            'favIcon': "https://grep.app/favicon-16x16.png",
+            'logo': "https://grep.app/apple-touch-icon.png",
+            'description': "grep.app searches code from over a half million public repositories on GitHub.\n"
+            "It searches for the exact string you enter, including any punctuation or other characters.\n"
+            "You can also search by regular expression, using the RE2 syntax.",
+        }
+    }
 
     # Default options
     opts = {
@@ -48,7 +68,8 @@ class sfp_grep_app(SpiderFootPlugin):
         return ["DOMAIN_NAME"]
 
     def producedEvents(self):
-        return ["EMAILADDR", "DOMAIN_NAME", "INTERNET_NAME", "RAW_RIR_DATA",
+        return ["EMAILADDR", "EMAILADDR_GENERIC", "DOMAIN_NAME",
+                "INTERNET_NAME", "RAW_RIR_DATA",
                 "INTERNET_NAME_UNRESOLVED", "LINKED_URL_INTERNAL"]
 
     def query(self, qry, page):
@@ -68,8 +89,8 @@ class sfp_grep_app(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug("Error processing JSON response: " + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -84,7 +105,7 @@ class sfp_grep_app(SpiderFootPlugin):
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if srcModuleName == 'sfp_grep_app':
             self.sf.debug("Ignoring " + eventData + ", from self.")
@@ -188,7 +209,12 @@ class sfp_grep_app(SpiderFootPlugin):
                             continue
 
                         self.sf.info("Found e-mail address: " + email)
-                        evt = SpiderFootEvent("EMAILADDR", email, self.__name__, event)
+                        if email.split("@")[0] in self.opts['_genericusers'].split(","):
+                            evttype = "EMAILADDR_GENERIC"
+                        else:
+                            evttype = "EMAILADDR"
+
+                        evt = SpiderFootEvent(evttype, email, self.__name__, event)
                         self.notifyListeners(evt)
                         self.results[email] = True
 
@@ -200,7 +226,7 @@ class sfp_grep_app(SpiderFootPlugin):
                 return None
 
             if self.opts['dns_resolve'] and not self.sf.resolveHost(host):
-                self.sf.debug("Host " + host + " could not be resolved")
+                self.sf.debug(f"Host {host} could not be resolved")
                 evt = SpiderFootEvent("INTERNET_NAME_UNRESOLVED", host, self.__name__, event)
                 self.notifyListeners(evt)
                 continue
@@ -212,4 +238,3 @@ class sfp_grep_app(SpiderFootPlugin):
                 self.notifyListeners(evt)
 
 # End of sfp_grep_app class
-

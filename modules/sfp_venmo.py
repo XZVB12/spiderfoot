@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        sfp_venmo
 # Purpose:     Gather user information from Venmo API.
 #
@@ -7,14 +7,31 @@
 # Created:     2019-07-16
 # Copyright:   (c) bcoles 2019
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import json
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_venmo(SpiderFootPlugin):
-    """Venmo:Footprint,Investigate,Passive:Social Media::Gather user information from Venmo API."""
+
+    meta = {
+        'name': "Venmo",
+        'summary': "Gather user information from Venmo API.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Social Media"],
+        'dataSource': {
+            'website': "https://venmo.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [],
+            'favIcon': "https://d1v6x81qdeozhc.cloudfront.net/static/images/logo/apple-touch-icon-1a10ee4b947b728d54265ac8c5084f78.png",
+            'logo': "https://d1v6x81qdeozhc.cloudfront.net/static/images/logo/apple-touch-icon-1a10ee4b947b728d54265ac8c5084f78.png",
+            'description': "Venmo is a digital wallet that allows you to send money and make purchases at approved merchants.",
+        }
+    }
 
     # Default options
     opts = {
@@ -35,11 +52,11 @@ class sfp_venmo(SpiderFootPlugin):
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return [ 'USERNAME' ]
+        return ['USERNAME']
 
     # What events this module produces
     def producedEvents(self):
-        return [ 'RAW_RIR_DATA' ]
+        return ['RAW_RIR_DATA']
 
     # Query Venmo API
     def query(self, qry):
@@ -55,8 +72,8 @@ class sfp_venmo(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug('Error processing JSON response: ' + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         json_data = data.get('data')
@@ -74,16 +91,16 @@ class sfp_venmo(SpiderFootPlugin):
         eventData = event.data
 
         if eventData in self.results:
-            return None
+            return
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         data = self.query(eventData)
 
         if not data:
-            return None
+            return
 
         e = SpiderFootEvent('RAW_RIR_DATA', str(data), self.__name__, event)
         self.notifyListeners(e)

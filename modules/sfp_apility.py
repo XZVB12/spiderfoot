@@ -13,10 +13,37 @@
 
 import json
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_apility(SpiderFootPlugin):
-    """Apility:Footprint,Investigate,Passive:Reputation Systems:apikey:Search Apility API for IP address and domain reputation."""
+
+    meta = {
+        'name': "Apility",
+        'summary': "Search Apility API for IP address and domain reputation.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://auth0.com/signals",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://auth0.com/signals/docs/"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://auth0.com",
+                "Register a free account",
+                "Navigate to https://manage.auth0.com/dashboard/",
+                "Click on 'API'",
+                "The API key is listed under 'Auth0 Management API'"
+            ],
+            'favIcon': "https://cdn.auth0.com/styleguide/components/1.0.8/media/logos/img/favicon.png",
+            'logo': "https://auth0.com/signals/docs/images/signals-docs-logo.svg",
+            'description': "Malicious login traffic is detected with Auth0’s Anomaly Detection engine. "
+            "This helps protect our customers from automated attacks, such as credential stuffing.",
+        }
+    }
 
     # Default options
     opts = {
@@ -85,7 +112,6 @@ class sfp_apility(SpiderFootPlugin):
 
         return self.parseApiResponse(res)
 
-
     # Query IP REST API
     # https://apility.io/apidocs/#full-ip-address-reputation
     # Note: currently unused
@@ -125,7 +151,7 @@ class sfp_apility(SpiderFootPlugin):
         # https://apility.io/docs/step-4-plans-pricing/
         # https://apility.io/docs/difference-hits-requests/
         if res['code'] == "429":
-            self.sf.error("You are being rate-limited by apility ", False)
+            self.sf.error("You are being rate-limited by apility ")
             self.errorState = True
             return None
 
@@ -136,14 +162,14 @@ class sfp_apility(SpiderFootPlugin):
             return None
 
         if res['content'] == 'Unauthorized':
-            self.sf.error("Authentication failed", False)
+            self.sf.error("Authentication failed")
             self.errorState = True
             return None
 
         try:
             data = json.loads(res['content'])
         except Exception as e:
-            self.sf.debug("Error processing JSON response.")
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -155,32 +181,32 @@ class sfp_apility(SpiderFootPlugin):
         eventData = event.data
 
         if self.errorState:
-            return None
+            return
 
         if eventData in self.results:
-            return None
+            return
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_apility but did not set an API key!", False)
+            self.sf.error("You enabled sfp_apility but did not set an API key!")
             self.errorState = True
-            return None
+            return
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventName == 'IP_ADDRESS':
             data = self.queryBadIp(eventData)
 
             if data is None:
                 self.sf.debug("No matches found for " + eventData)
-                return None
+                return
 
             res = data.get('response')
 
             if not res:
                 self.sf.debug("No matches found for " + eventData)
-                return None
+                return
 
             for m in res:
                 if m == 'FREEMAIL' and not self.opts['malicious_freemail']:
@@ -193,13 +219,13 @@ class sfp_apility(SpiderFootPlugin):
 
             if data is None:
                 self.sf.debug("No matches found for " + eventData)
-                return None
+                return
 
             res = data.get('response')
 
             if not res:
                 self.sf.debug("No matches found for " + eventData)
-                return None
+                return
 
             evt = SpiderFootEvent('RAW_RIR_DATA', str(res), self.__name__, event)
             self.notifyListeners(evt)
@@ -214,7 +240,7 @@ class sfp_apility(SpiderFootPlugin):
 
             if not domain:
                 self.sf.debug("No matches found for " + eventData)
-                return None
+                return
 
             if domain.get('blacklist'):
                 for m in domain.get('blacklist'):

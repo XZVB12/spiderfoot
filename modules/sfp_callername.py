@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        sfp_callername
 # Purpose:     SpiderFoot plug-in to search CallerName.com for a phone number
 #              (US only) and retrieve location and reputation information.
@@ -8,15 +8,38 @@
 # Created:     2019-05-28
 # Copyright:   (c) bcoles 2019
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import re
-
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_callername(SpiderFootPlugin):
-    """CallerName:Footprint,Investigate,Passive:Real World::Lookup US phone number location and reputation information."""
+
+    meta = {
+        'name': "CallerName",
+        'summary': "Lookup US phone number location and reputation information.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Real World"],
+        'dataSource': {
+            'website': "http://callername.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://callername.com/faq",
+                "https://callername.com/stats"
+            ],
+            'favIcon': "http://static.callername.com/favicon.ico",
+            'logo': "http://static.callername.com/img/logo.min.png",
+            'description': "CallerName is a free, reverse phone lookup service for both cell and landline numbers. "
+            "It relies on a database of white pages and business pages taken from public sources. "
+            "The easy-to-use and streamlined interface allow users to look up the caller ID information of any number quickly. "
+            "Just type the unknown number into the search bar to start. "
+            "You need not pay nor register to use this 100% free service.",
+        }
+    }
 
     # Default options
     opts = {
@@ -31,7 +54,6 @@ class sfp_callername(SpiderFootPlugin):
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
-        self.__dataSource__ = 'CallerName'
         self.results = self.tempStorage()
         self.errorState = False
 
@@ -60,7 +82,7 @@ class sfp_callername(SpiderFootPlugin):
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # Only US numbers are supported (+1)
         if not eventData.startswith('+1'):
@@ -75,7 +97,7 @@ class sfp_callername(SpiderFootPlugin):
             return None
 
         # Query CallerName.com for the specified phone number
-        url = 'https://callername.com/' + number
+        url = f"https://callername.com/{number}"
         res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'], useragent=self.opts['_useragent'])
 
         time.sleep(1)
@@ -107,7 +129,7 @@ class sfp_callername(SpiderFootPlugin):
             bad_votes = int(rep_bad_match[0])
 
             if bad_votes > good_votes:
-                text = "CallerName [" + eventData + "]\n" + "<SFURL>" + url + "</SFURL>"
+                text = f"CallerName [{eventData}]\n<SFURL>{url}</SFURL>"
                 evt = SpiderFootEvent('MALICIOUS_PHONE_NUMBER', text, self.__name__, event)
                 self.notifyListeners(evt)
 

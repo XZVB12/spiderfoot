@@ -11,9 +11,11 @@
 # -------------------------------------------------------------------------------
 
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
-import urllib.request, urllib.error, urllib.parse
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 sites = {
     # Search string to use, domain name the profile will sit on within
@@ -21,29 +23,58 @@ sites = {
     "Facebook": [
         "\"{name}\"+site:facebook.com",
         [
-            '[ \'"](https?://[a-z\.]*facebook.[a-z\.]+/[^/"\'<> ]+/?)[\'" ]',
-            '(https?%3a%2f%2f[a-z\.]*facebook.[a-z\.]+%2f[^\/"\'<> ]+/?)',
+            r'[ \'"](https?://[a-z\.]*facebook.[a-z\.]+/[^/"\'<> ]+/?)[\'"]',
+            r'(https?%3a%2f%2f[a-z\.]*facebook.[a-z\.]+%2f[^\/"\'<> ]+/?)',
         ],
     ],
     "Google+": [
         "\"{name}\"+site:plus.google.com",
         [
-            '[ \'"](https?://plus.google.[a-z\.]+/\d+[^"\'<>\/ ]+)[\'" ]',
-            '(https?%3a%2f%2fplus.google.[a-z\.]+%2f\d+[^\/"\'<> ]+)',
+            r'[ \'"](https?://plus.google.[a-z\.]+/\d+[^"\'<>\/ ]+)[\'"]',
+            r'(https?%3a%2f%2fplus.google.[a-z\.]+%2f\d+[^\/"\'<> ]+)',
         ],
     ],
     "LinkedIn": [
         "\"{name}\"+site:linkedin.com",
         [
-            '["\' ](https?://[a-z\.]*linkedin.[a-z\.]+/[^\?"\'<> ]+)[\'" ]',
-            '(https?%3a%2f%2f[a-z\.]*linkedin.[a-z\.]+%2f[^\?"\'<> ]+)',
+            r'["\' ](https?://[a-z\.]*linkedin.[a-z\.]+/[^\?"\'<> ]+)[\'"]',
+            r'(https?%3a%2f%2f[a-z\.]*linkedin.[a-z\.]+%2f[^\?"\'<> ]+)',
         ],
     ],
 }
 
 
 class sfp_socialprofiles(SpiderFootPlugin):
-    """Social Media Profile Finder:Footprint,Passive:Social Media:slow,apikey:Tries to discover the social media profiles for human names identified."""
+
+    meta = {
+        'name': "Social Media Profile Finder",
+        'summary': "Tries to discover the social media profiles for human names identified.",
+        'flags': ["slow", "apikey"],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Social Media"],
+        'dataSource': {
+            'website': "https://developers.google.com/custom-search",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://developers.google.com/custom-search/v1",
+                "https://developers.google.com/custom-search/docs/overview",
+                "https://cse.google.com/cse"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://developers.google.com/custom-search/v1/introduction",
+                "Register a free Google account",
+                "Click on 'Get A Key'",
+                "Connect a Project",
+                "The API Key will be listed under 'YOUR API KEY'"
+            ],
+            'favIcon': "https://www.gstatic.com/devrel-devsite/prod/v2210deb8920cd4a55bd580441aa58e7853afc04b39a9d9ac4198e1cd7fbe04ef/developers/images/favicon.png",
+            'logo': "https://www.gstatic.com/devrel-devsite/prod/v2210deb8920cd4a55bd580441aa58e7853afc04b39a9d9ac4198e1cd7fbe04ef/developers/images/favicon.png",
+            'description': "Google Custom Search enables you to create a search engine for your website, your blog, or a collection of websites. "
+            "You can configure your engine to search both web pages and images. "
+            "You can fine-tune the ranking, add your own promotions and customize the look and feel of the search results. "
+            "You can monetize the search by connecting your engine to your Google AdSense account.",
+        }
+    }
 
     # Default options
     opts = {
@@ -96,21 +127,21 @@ class sfp_socialprofiles(SpiderFootPlugin):
         self.currentEventSrc = event
 
         if self.errorState:
-            return None
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.opts['google_api_key'] == "" and self.opts['bing_api_key'] == "":
-            self.sf.error("You enabled sfp_socialprofiles but did not set a Google or Bing API key!", False)
+            self.sf.error("You enabled sfp_socialprofiles but did not set a Google or Bing API key!")
             self.errorState = True
-            return None
+            return
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
-        else:
-            self.results[eventData] = True
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
+
+        self.results[eventData] = True
 
         if self.keywords is None:
             self.keywords = self.sf.domainKeywords(
@@ -126,10 +157,9 @@ class sfp_socialprofiles(SpiderFootPlugin):
 
             if self.opts["method"].lower() == "yahoo":
                 self.sf.error(
-                    "Yahoo is no longer supported. Please try 'bing' or 'google'.",
-                    False,
+                    "Yahoo is no longer supported. Please try 'bing' or 'google'."
                 )
-                return None
+                return
 
             if self.opts["method"].lower() == "google":
                 res = self.sf.googleIterate(
@@ -160,7 +190,7 @@ class sfp_socialprofiles(SpiderFootPlugin):
                 continue
 
             if self.checkForStop():
-                return None
+                return
 
             # Submit the results for analysis
             evt = SpiderFootEvent(
@@ -188,7 +218,7 @@ class sfp_socialprofiles(SpiderFootPlugin):
                         instances.append(match)
 
                     if self.checkForStop():
-                        return None
+                        return
 
                     # Fetch the profile page if we are checking
                     # for a firm relationship.
@@ -202,6 +232,7 @@ class sfp_socialprofiles(SpiderFootPlugin):
                             match,
                             timeout=self.opts["_fetchtimeout"],
                             useragent=self.opts["_useragent"],
+                            verify=False
                         )
 
                         if pres["content"] is None:
@@ -210,7 +241,7 @@ class sfp_socialprofiles(SpiderFootPlugin):
                             found = False
                             for kw in self.keywords:
                                 if re.search(
-                                    "[^a-zA-Z\-\_]" + kw + "[^a-zA-Z\-\_]",
+                                    r"[^a-zA-Z\-\_]" + kw + r"[^a-zA-Z\-\_]",
                                     pres["content"],
                                     re.IGNORECASE,
                                 ):

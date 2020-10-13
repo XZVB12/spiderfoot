@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:         sfp_iknowwhatyoudownload
 # Purpose:      Query iknowwhatyoudownload.com for IP addresses using BitTorrent.
 #
@@ -7,14 +7,41 @@
 # Created:     03/09/2018
 # Copyright:   (c) Steve Micallef
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_iknowwhatyoudownload(SpiderFootPlugin):
-    """Iknowwhatyoudownload.com:Footprint,Investigate,Passive:Secondary Networks:apikey:Check iknowwhatyoudownload.com for IP addresses that have been using BitTorrent."""
 
+    meta = {
+        'name': "Iknowwhatyoudownload.com",
+        'summary': "Check iknowwhatyoudownload.com for IP addresses that have been using BitTorrent.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Secondary Networks"],
+        'dataSource': {
+            'website': "https://iknowwhatyoudownload.com/en/peer/",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://iknowwhatyoudownload.com/en/api/",
+                "https://iknowwhatyoudownload.com/en/link/",
+                "https://iknowwhatyoudownload.com/en/peer/"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://iknowwhatyoudownload.com/en/api/",
+                "Request Demo Key with email id",
+                "The API key will be sent to your email"
+            ],
+            'favIcon': "https://iknowwhatyoudownload.com/assets/img/utorrent2.png",
+            'logo': "https://iknowwhatyoudownload.com/assets/img/logo.png",
+            'description': "Our system collects torrent files in two ways: parsing torrent sites, and listening DHT network. "
+            "We have more than 1.500.000 torrents which where classified and which are using now "
+            "for collecting peer sharing facts (up to 200.000.000 daily).",
+        }
+    }
 
     # Default options
     opts = {
@@ -61,12 +88,11 @@ class sfp_iknowwhatyoudownload(SpiderFootPlugin):
         ret = None
         retdata = None
 
-        base = "https://api.antitor.com/history/peer/?ip="
-        url = base + qry + "&days=" + str(self.opts['daysback'])
+        url = "https://api.antitor.com/history/peer/?ip="
+        url += qry + "&days=" + str(self.opts['daysback'])
         url += "&key=" + self.opts['api_key']
 
-        res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
-            useragent="SpiderFoot")
+        res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'], useragent="SpiderFoot")
 
         if res['code'] in ["403", "500"]:
             self.sf.info("Unable to fetch data from iknowwhatyoudownload.com right now.")
@@ -75,25 +101,24 @@ class sfp_iknowwhatyoudownload(SpiderFootPlugin):
         try:
             ret = json.loads(res['content'])
         except Exception as e:
-            self.sf.error("Error processing JSON response from iknowwhatyoudownload.com: " + str(e), False)
+            self.sf.error(f"Error processing JSON response from iknowwhatyoudownload.com: {e}")
             return None
 
         if 'error' in ret:
             if ret['error'] == "INVALID_DAYS":
                 self.errorState = True
-                self.sf.error("The number of days you have configured is not accepted. If you have the demo key, try 30 days or less.", False)
+                self.sf.error("The number of days you have configured is not accepted. If you have the demo key, try 30 days or less.")
                 return None
 
-        if 'contents' in ret:
-            if len(ret['contents']) > 0:
-                retdata = "<SFURL>https://iknowwhatyoudownload.com/en/peer/?ip=" + qry + "</SFURL>\n"
-                for d in ret['contents']:
-                    retdata += d['torrent']['name'] + \
-                               " (" + d.get("endDate", "Date unknown") + ")\n"
-            else:
-                return None
-        else:
+        if 'contents' not in ret:
             return None
+
+        if not len(ret['contents']):
+            return None
+
+        retdata = "<SFURL>https://iknowwhatyoudownload.com/en/peer/?ip=" + qry + "</SFURL>\n"
+        for d in ret['contents']:
+            retdata += d['torrent']['name'] + " (" + d.get("endDate", "Date unknown") + ")\n"
 
         return retdata
 
@@ -103,28 +128,29 @@ class sfp_iknowwhatyoudownload(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.errorState:
             return None
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_iknowwhatyoudownload but did not set an API key!", False)
+            self.sf.error("You enabled sfp_iknowwhatyoudownload but did not set an API key!")
             self.errorState = True
             return None
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
-        else:
-            self.results[eventData] = True
+
+        self.results[eventData] = True
 
         data = self.query(eventData)
-        if data == None:
+
+        if not data:
             return None
-        else:
-            e = SpiderFootEvent("MALICIOUS_IPADDR", data, self.__name__, event)
-            self.notifyListeners(e)
+
+        e = SpiderFootEvent("MALICIOUS_IPADDR", data, self.__name__, event)
+        self.notifyListeners(e)
 
 # End of sfp_iknowwhatyoudownload class

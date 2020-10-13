@@ -14,11 +14,19 @@
 import random
 import threading
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_dnsbrute(SpiderFootPlugin):
-    """DNS Brute-forcer:Footprint,Investigate:DNS::Attempts to identify hostnames through brute-forcing common names and iterations."""
 
+    meta = {
+        'name': "DNS Brute-forcer",
+        'summary': "Attempts to identify hostnames through brute-forcing common names and iterations.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate"],
+        'categories': ["DNS"]
+    }
 
     # Default options
     opts = {
@@ -38,7 +46,8 @@ class sfp_dnsbrute(SpiderFootPlugin):
         'commons': "Try a list of about 750 common hostnames/sub-domains.",
         'top10000': "Try a further 10,000 common hostnames/sub-domains. Will make the scan much slower.",
         'numbersuffix': "For any host found, try appending 1, 01, 001, -1, -01, -001, 2, 02, etc. (up to 10)",
-        'numbersuffixlimit': "Limit using the number suffixes for hosts that have already been resolved? If disabled this will significantly extend the duration of scans."
+        'numbersuffixlimit': "Limit using the number suffixes for hosts that have already been resolved? If disabled this will significantly extend the duration of scans.",
+        "_maxthreads": "Maximum threads"
     }
 
     events = None
@@ -90,7 +99,7 @@ class sfp_dnsbrute(SpiderFootPlugin):
             if addrs:
                 with self.lock:
                     self.hostResults[name] = True
-        except BaseException as e:
+        except Exception:
             with self.lock:
                 self.hostResults[name] = False
 
@@ -137,23 +146,22 @@ class sfp_dnsbrute(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
         eventDataHash = self.sf.hashstring(eventData)
-        parentEvent = event
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if srcModuleName == "sfp_dnsbrute":
-            return None
+            return
 
         if eventDataHash in self.events:
-            return None
+            return
         self.events[eventDataHash] = True
 
         if eventName == "INTERNET_NAME" and not self.getTarget().matches(eventData, includeChildren=False):
             if not self.opts['numbersuffix']:
-                return None
+                return
 
             if self.checkForStop():
-                return None
+                return
 
             h, dom = eventData.split(".", 1)
 
@@ -161,7 +169,7 @@ class sfp_dnsbrute(SpiderFootPlugin):
             wildcard = self.sf.checkDnsWildcard(dom)
             if self.opts['skipcommonwildcard'] and wildcard:
                 self.sf.debug("Wildcard DNS detected on " + dom + " so skipping host iteration.")
-                return None
+                return
 
             dom = "." + dom
             nextsubs = dict()
@@ -176,23 +184,23 @@ class sfp_dnsbrute(SpiderFootPlugin):
             self.tryHostWrapper(list(nextsubs.keys()), event)
 
             # The rest of the module is for handling targets only
-            return None
+            return
 
         # Only for the target, from this point forward...
         if not self.getTarget().matches(eventData, includeChildren=False):
-            return None
+            return
 
         # Try resolving common names
         self.sf.debug("Iterating through possible sub-domains.")
         wildcard = self.sf.checkDnsWildcard(eventData)
         if self.opts['skipcommonwildcard'] and wildcard:
             self.sf.debug("Wildcard DNS detected.")
-            return None
+            return
 
         targetList = list()
         for sub in self.sublist:
             if self.checkForStop():
-                return None
+                return
 
             name = sub + "." + eventData
 
@@ -211,7 +219,7 @@ class sfp_dnsbrute(SpiderFootPlugin):
             dom = "." + eventData
             for s in self.sublist:
                 if self.checkForStop():
-                    return None
+                    return
 
                 for i in range(10):
                     nextsubs[s + str(i) + dom] = True

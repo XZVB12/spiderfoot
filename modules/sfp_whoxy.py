@@ -11,10 +11,40 @@
 # -------------------------------------------------------------------------------
 
 import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_whoxy(SpiderFootPlugin):
-    """Whoxy:Investigate,Passive:Search Engines:apikey:Reverse Whois lookups using Whoxy.com."""
+
+    meta = {
+        'name': "Whoxy",
+        'summary': "Reverse Whois lookups using Whoxy.com.",
+        'flags': ["apikey"],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://www.whoxy.com/",
+            'model': "COMMERCIAL_ONLY",
+            'references': [
+                "https://www.whoxy.com/#api",
+                "https://www.whoxy.com/whois-history/",
+                "https://www.whoxy.com/free-whois-api/"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://www.whoxy.com/pricing.php",
+                "Select a plan and register an account",
+                "Pay for the plan",
+                "The API key will be presented upon payment"
+            ],
+            'favIcon': "https://www.whoxy.com/favicon.ico",
+            'logo': "https://www.whoxy.com/images/logo.png",
+            'description': "Whois API is a hosted web service that returns well-parsed WHOIS fields "
+            "to your application in popular XML & JSON formats per HTTP request. "
+            "Leave all the hard work to us, as you need not worry about the query limit and "
+            "restrictions imposed by various domain registrars.",
+        }
+    }
 
     # Default options
     opts = {
@@ -60,8 +90,8 @@ class sfp_whoxy(SpiderFootPlugin):
         res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
                                useragent="SpiderFoot")
 
-        if res['code'] in [ "400", "429", "500", "403" ]:
-            self.sf.error("Whoxy API key seems to have been rejected or you have exceeded usage limits.", False)
+        if res['code'] in ["400", "429", "500", "403"]:
+            self.sf.error("Whoxy API key seems to have been rejected or you have exceeded usage limits.")
             self.errorState = True
             return None
 
@@ -72,7 +102,7 @@ class sfp_whoxy(SpiderFootPlugin):
         try:
             info = json.loads(res['content'])
             if info.get("status", 0) == 0:
-                self.sf.error("Error querying Whoxy: " + info.get("status_reason", "Unknown"), False)
+                self.sf.error("Error querying Whoxy: " + info.get("status_reason", "Unknown"))
                 self.errorState = True
                 return None
             if info.get("total_pages", 1) > 1:
@@ -81,7 +111,7 @@ class sfp_whoxy(SpiderFootPlugin):
                         accum.extend(info.get('search_result'))
                     else:
                         accum = info.get('search_result')
-                    return self.query(qry, querytype, page+1, accum)
+                    return self.query(qry, querytype, page + 1, accum)
                 else:
                     # We are at the last page
                     accum.extend(info.get('search_result', []))
@@ -89,7 +119,7 @@ class sfp_whoxy(SpiderFootPlugin):
             else:
                 return info.get('search_result', [])
         except Exception as e:
-            self.sf.error("Error processing JSON response from Whoxy: " + str(e), False)
+            self.sf.error("Error processing JSON response from Whoxy: " + str(e))
             return None
 
     # Handle events sent to this module
@@ -99,21 +129,21 @@ class sfp_whoxy(SpiderFootPlugin):
         eventData = event.data
 
         if self.errorState:
-            return None
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_whoxy but did not set an API key!", False)
+            self.sf.error("You enabled sfp_whoxy but did not set an API key!")
             self.errorState = True
-            return None
+            return
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
-        else:
-            self.results[eventData] = True
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
+
+        self.results[eventData] = True
 
         rec = self.query(eventData, "email")
         myres = list()

@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:         sfp_clearbit
 # Purpose:      Query clearbit.com using their API.
 #
@@ -7,14 +7,47 @@
 # Created:     20/03/2017
 # Copyright:   (c) Steve Micallef
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-import json
 import base64
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import json
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_clearbit(SpiderFootPlugin):
-    """Clearbit:Footprint,Investigate,Passive:Search Engines:apikey:Check for names, addresses, domains and more based on lookups of e-mail addresses on clearbit.com."""
+
+    meta = {
+        'name': "Clearbit",
+        'summary': "Check for names, addresses, domains and more based on lookups of e-mail addresses on clearbit.com.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://clearbit.com/",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://clearbit.com/docs"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://clearbit.com",
+                "Register account for a Free Trial",
+                "Navigate to https://dashboard.clearbit.com/api",
+                "The API key is listed under 'Your API Key'"
+            ],
+            'favIcon': "https://clearbit.com/assets/site/logo.png",
+            'logo': "https://clearbit.com/assets/site/logo.png",
+            'description': "Clearbit is the marketing data engine for all of your customer interactions. "
+            "Deeply understand your customers, identify future prospects, "
+            "and personalize every single marketing and sales interaction.\n"
+            "Rely on fresh, accurate data with our proprietary real-time lookups. "
+            "Then act on new information immediately, with sales alerting and job change notifications.\n"
+            "Get company attributes like employee count, technologies used, and industry classification—and "
+            "get employee details like role, seniority, and even job change notifications, right at your fingertips.\n"
+            "With our dataset and machine learning algorithms, you’ll have all of "
+            "the information you need to convert leads and grow your business.",
+        }
+    }
 
     # Default options
     opts = {
@@ -45,12 +78,12 @@ class sfp_clearbit(SpiderFootPlugin):
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return [ "EMAILADDR" ]
+        return ["EMAILADDR"]
 
     # What events this module produces
     def producedEvents(self):
-        return [ "RAW_RIR_DATA", "PHONE_NUMBER", "PHYSICAL_ADDRESS",
-                 "AFFILIATE_INTERNET_NAME", "EMAILADDR" ]
+        return ["RAW_RIR_DATA", "PHONE_NUMBER", "PHYSICAL_ADDRESS",
+                "AFFILIATE_INTERNET_NAME", "EMAILADDR", "EMAILADDR_GENERIC"]
 
     def query(self, t):
         ret = None
@@ -65,19 +98,16 @@ class sfp_clearbit(SpiderFootPlugin):
             'Authorization': "Basic " + token.decode('utf-8')
         }
 
-        res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
-            useragent="SpiderFoot", headers=headers)
+        res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'], useragent="SpiderFoot", headers=headers)
 
         if res['code'] != "200":
-            self.sf.error("Return code indicates no results or potential API key failure or exceeded limits.",
-                       False)
+            self.sf.error("Return code indicates no results or potential API key failure or exceeded limits.")
             return None
 
         try:
             ret = json.loads(res['content'])
         except Exception as e:
-            self.sf.error("Error processing JSON response from clearbit.io: " + \
-                          str(e), False)
+            self.sf.error(f"Error processing JSON response from clearbit.io: {e}")
             return None
 
         return ret
@@ -92,15 +122,15 @@ class sfp_clearbit(SpiderFootPlugin):
             return None
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_clearbit but did not set an API key!", False)
+            self.sf.error("You enabled sfp_clearbit but did not set an API key!")
             self.errorState = True
             return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
         else:
             self.results[eventData] = True
@@ -159,7 +189,11 @@ class sfp_clearbit(SpiderFootPlugin):
                             self.notifyListeners(evt)
                     if 'emailAddresses' in data['company']['site']:
                         for e in data['company']['site']['emailAddresses']:
-                            evt = SpiderFootEvent("EMAILADDR", e, self.__name__, event)
+                            if e.split("@")[0] in self.opts['_genericusers'].split(","):
+                                evttype = "EMAILADDR_GENERIC"
+                            else:
+                                evttype = "EMAILADDR"
+                            evt = SpiderFootEvent(evttype, e, self.__name__, event)
                             self.notifyListeners(evt)
 
                 # Get the location of the person, also indicating

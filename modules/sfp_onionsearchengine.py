@@ -12,19 +12,41 @@
 # -------------------------------------------------------------------------------
 
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_onionsearchengine(SpiderFootPlugin):
-    """Onionsearchengine.com:Footprint,Investigate:Search Engines::Search Tor onionsearchengine.com for mentions of the target domain."""
+
+    meta = {
+        'name': "Onionsearchengine.com",
+        'summary': "Search Tor onionsearchengine.com for mentions of the target domain.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://as.onionsearchengine.com",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://helpdesk.onionsearchengine.com/?v=knowledgebase",
+                "https://onionsearchengine.com/add_url.php"
+            ],
+            'favIcon': "https://as.onionsearchengine.com/images/onionsearchengine.jpg",
+            'logo': "https://as.onionsearchengine.com/images/onionsearchengine.jpg",
+            'description': "No cookies, no javascript, no trace. We protect your privacy.\n"
+            "Onion search engine is search engine with ability to find content on tor network / deepweb / darkweb.",
+        }
+    }
 
     # Default options
     opts = {
         'timeout': 10,
         'max_pages': 20,
         'fetchlinks': True,
-        'blacklist': [ '.*://relate.*' ],
+        'blacklist': ['.*://relate.*'],
         'fullnames': True
     }
 
@@ -58,7 +80,6 @@ class sfp_onionsearchengine(SpiderFootPlugin):
 
     def handleEvent(self, event):
         eventName = event.eventType
-        srcModuleName = event.module
         eventData = event.data
 
         if not self.opts['fullnames'] and eventName == 'HUMAN_NAME':
@@ -108,7 +129,7 @@ class sfp_onionsearchengine(SpiderFootPlugin):
                                   self.__name__, event)
             self.notifyListeners(evt)
 
-            links = re.findall("url\.php\?u=(.[^\"\']+)[\"\']",
+            links = re.findall(r"url\.php\?u=(.[^\"\']+)[\"\']",
                                data['content'], re.IGNORECASE | re.DOTALL)
 
             for link in links:
@@ -140,7 +161,8 @@ class sfp_onionsearchengine(SpiderFootPlugin):
 
                 res = self.sf.fetchUrl(link,
                                        timeout=self.opts['_fetchtimeout'],
-                                       useragent=self.opts['_useragent'])
+                                       useragent=self.opts['_useragent'],
+                                       verify=False)
 
                 if res['content'] is None:
                     self.sf.debug("Ignoring " + link + " as no data returned")
@@ -156,7 +178,7 @@ class sfp_onionsearchengine(SpiderFootPlugin):
                 try:
                     startIndex = res['content'].index(eventData) - 120
                     endIndex = startIndex + len(eventData) + 240
-                except BaseException as e:
+                except Exception:
                     self.sf.debug('String "' + eventData + '" not found in content.')
                     continue
 

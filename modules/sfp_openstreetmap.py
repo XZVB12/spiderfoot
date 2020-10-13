@@ -11,14 +11,36 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-import re
 import json
+import re
 import time
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_openstreetmap(SpiderFootPlugin):
-    """OpenStreetMap:Footprint,Investigate,Passive:Real World::Retrieves latitude/longitude coordinates for physical addresses from OpenStreetMap API."""
+
+    meta = {
+        'name': "OpenStreetMap",
+        'summary': "Retrieves latitude/longitude coordinates for physical addresses from OpenStreetMap API.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Real World"],
+        'dataSource': {
+            'website': "https://www.openstreetmap.org/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://wiki.openstreetmap.org/wiki/API",
+                "https://wiki.openstreetmap.org/wiki/API_v0.6"
+            ],
+            'favIcon': "https://www.openstreetmap.org/assets/osm_logo-b7061f13a03615f787a7e0e56a0db5252eb2a217ab063183e78526a8cc10989b.svg",
+            'logo': "https://www.openstreetmap.org/assets/osm_logo-b7061f13a03615f787a7e0e56a0db5252eb2a217ab063183e78526a8cc10989b.svg",
+            'description': "OpenStreetMap powers map data on thousands of web sites, mobile apps, and hardware devices.",
+        }
+    }
 
     opts = {
     }
@@ -63,7 +85,7 @@ class sfp_openstreetmap(SpiderFootPlugin):
         try:
             data = json.loads(res['content'])
         except Exception as e:
-            self.sf.debug("Error processing JSON response: " + str(e))
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -74,10 +96,10 @@ class sfp_openstreetmap(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
         else:
             self.results[eventData] = True
@@ -113,7 +135,7 @@ class sfp_openstreetmap(SpiderFootPlugin):
             try:
                 lat = location.get('lat')
                 lon = location.get('lon')
-            except BaseException as e:
+            except Exception as e:
                 self.sf.debug("Failed to get lat/lon: " + str(e))
                 continue
 

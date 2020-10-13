@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        sfp_scylla
 # Purpose:     Gather breach data from Scylla API.
 #
@@ -7,16 +7,38 @@
 # Created:     2019-09-06
 # Copyright:   (c) bcoles 2019
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import json
 import time
-import base64
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_scylla(SpiderFootPlugin):
-    """Scylla:Footprint,Investigate,Passive:Leaks, Dumps and Breaches::Gather breach data from Scylla API."""
+
+    meta = {
+        'name': "Scylla",
+        'summary': "Gather breach data from Scylla API.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Leaks, Dumps and Breaches"],
+        'dataSource': {
+            'website': "https://scylla.sh/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://scylla.sh/crowdsource"
+            ],
+            'favIcon': "",
+            'logo': "",
+            'description': "scylla.sh has two major goals. One is to have a community-oriented database leak community "
+            "that is a useful tool for security researchers.\n"
+            "The other major goal is to undercut those people that are selling databases.",
+        }
+    }
 
     # Default options
     opts = {
@@ -27,8 +49,8 @@ class sfp_scylla(SpiderFootPlugin):
 
     # Option descriptions
     optdescs = {
-        'pause':     "Number of seconds to pause between fetches.",
-        'per_page':  "Maximum number of results per page.",
+        'pause': "Number of seconds to pause between fetches.",
+        'per_page': "Maximum number of results per page.",
         'max_pages': "Maximum number of pages of results to fetch."
     }
 
@@ -45,36 +67,34 @@ class sfp_scylla(SpiderFootPlugin):
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return [ 'INTERNET_NAME' ]
+        return ['DOMAIN_NAME']
 
     # What events this module produces
     def producedEvents(self):
-        return [ 'EMAILADDR_COMPROMISED', 'PASSWORD_COMPROMISED', 'HASH_COMPROMISED', 'RAW_RIR_DATA' ]
+        return ['EMAILADDR_COMPROMISED', 'PASSWORD_COMPROMISED', 'HASH_COMPROMISED', 'RAW_RIR_DATA']
 
     # Query Scylla API
     def query(self, qry, per_page=20, start=0):
         params = {
             'q': 'Email:@' + qry.encode('raw_unicode_escape').decode("ascii", errors='replace'),
-            'num': str(per_page),
-            'from': str(start)
+            'size': str(per_page),
+            'start': str(start)
         }
 
-        b64_auth = base64.b64encode("sammy:BasicPassword!".encode("utf-8"))
         headers = {
-            'Accept': 'application/json',
-            # Provided by @_hyp3ri0n on Twitter, owner of the service and granted
-            # permission to hard-code these.
-            'Authorization': "Basic " + b64_auth.decode("utf-8")
+            'Accept': 'application/json'
         }
         res = self.sf.fetchUrl('https://scylla.sh/search?' + urllib.parse.urlencode(params),
                                headers=headers,
                                timeout=15,
-                               useragent=self.opts['_useragent'])
+                               useragent=self.opts['_useragent'],
+                               # expired certficate
+                               verify=False)
 
         time.sleep(self.opts['pause'])
 
         if res['code'] != "200":
-            self.sf.error("Syclla.sh is having problems.", False)
+            self.sf.error("Syclla.sh is having problems.")
             self.errorState = True
             return None
 
@@ -84,8 +104,8 @@ class sfp_scylla(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug('Error processing JSON response: ' + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -97,14 +117,14 @@ class sfp_scylla(SpiderFootPlugin):
         eventData = event.data
 
         if eventData in self.results:
-            return None
+            return
 
         if self.errorState:
-            return None
+            return
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         position = 0
         max_pages = int(self.opts['max_pages'])
@@ -116,7 +136,7 @@ class sfp_scylla(SpiderFootPlugin):
 
         while position < (per_page * max_pages):
             if self.checkForStop():
-                return None
+                return
 
             if self.errorState:
                 break
@@ -124,30 +144,30 @@ class sfp_scylla(SpiderFootPlugin):
             data = self.query(eventData, per_page, position)
 
             if not data:
-                return None
+                return
 
             position += per_page
 
-            #evt = SpiderFootEvent('RAW_RIR_DATA', str(data), self.__name__, event)
-            #self.notifyListeners(evt)
+            # evt = SpiderFootEvent('RAW_RIR_DATA', str(data), self.__name__, event)
+            # self.notifyListeners(evt)
 
-            for result in data:
-                source = result.get('_source')
+            for row in data:
+                result = row.get('fields')
 
-                if not source:
+                if not result:
                     continue
 
-                email = source.get('Email')
+                email = result.get('email')
 
                 # A blank email result should not be possible, as we searched using the 'Email:' filter
                 if not email:
                     continue
 
-                try:
-                    mailDom = email.lower().split('@')[1]
-                except BaseException as e:
-                    self.sf.debug("Encountered strange result: " + email)
+                if not self.sf.validEmail(email):
+                    self.sf.debug("Skipping invalid email address: " + email)
                     continue
+
+                mailDom = email.lower().split('@')[1]
 
                 # Skip unrelated emails
                 # Scylla sometimes returns broader results than the searched data
@@ -155,23 +175,18 @@ class sfp_scylla(SpiderFootPlugin):
                     self.sf.debug("Skipped address: " + email)
                     continue
 
-                breach = source.get('Domain')
-
-                if not breach:
-                    breach = 'Unknown'
-
+                breach = result.get('domain', 'Unknown')
                 emails.append(email + " [" + breach + "]")
-
-                pass_hash = source.get('PassHash')
+                pass_hash = result.get('passhash')
 
                 if pass_hash:
-                    pass_salt = source.get('PassSalt')
+                    pass_salt = result.get('passsalt')
                     if pass_salt:
                         hashes.append(email + ':' + pass_hash + " (Salt: " + pass_salt + ") [" + breach + "]")
                     else:
                         hashes.append(email + ':' + pass_hash + " [" + breach + "]")
 
-                password = source.get('Password')
+                password = result.get('password')
 
                 if password:
                     passwords.append(email + ':' + password + " [" + breach + "]")

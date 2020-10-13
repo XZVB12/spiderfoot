@@ -12,12 +12,43 @@
 # -------------------------------------------------------------------------------
 
 from netaddr import IPNetwork
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_honeypot(SpiderFootPlugin):
-    """Honeypot Checker:Investigate,Passive:Reputation Systems:apikey:Query the projecthoneypot.org database for entries."""
 
+    meta = {
+        'name': "Honeypot Checker",
+        'summary': "Query the projecthoneypot.org database for entries.",
+        'flags': ["apikey"],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://www.projecthoneypot.org/",
+            'model': "FREE_AUTH_UNLIMITED",
+            'references': [
+                "https://www.projecthoneypot.org/httpbl_api.php",
+                "https://www.projecthoneypot.org/services_overview.php",
+                "https://www.projecthoneypot.org/faq.php"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://www.projecthoneypot.org",
+                "Sign up for a free account",
+                "Navigate to https://www.projecthoneypot.org/httpbl_configure.php'",
+                "Request for an API key",
+                "The API key is listed under 'Your http:BL Access Key'"
+            ],
+            'favIcon': "https://www.projecthoneypot.org/favicon.ico",
+            'logo': "https://www.projecthoneypot.org/images/php_logo.gif",
+            'description': "Project Honey Pot is the first and only distributed system for identifying spammers "
+            "and the spambots they use to scrape addresses from your website. "
+            "Using the Project Honey Pot system you can install addresses "
+            "that are custom-tagged to the time and IP address of a visitor to your site. "
+            "If one of these addresses begins receiving email we not only can tell that the messages are spam, "
+            "but also the exact moment when the address was harvested and the IP address that gathered it.",
+        }
+    }
 
     # Default options
     opts = {
@@ -106,21 +137,19 @@ class sfp_honeypot(SpiderFootPlugin):
         eventName = parentEvent.eventType
 
         try:
-            lookup = self.opts['api_key'] + "." + \
-                     self.reverseAddr(qaddr) + ".dnsbl.httpbl.org"
+            lookup = f"{self.opts['api_key']}.{self.reverseAddr(qaddr)}.dnsbl.httpbl.org"
 
-            self.sf.debug("Checking Honeypot: " + lookup)
+            self.sf.debug(f"Checking Honeypot: {lookup}")
             addrs = self.sf.resolveHost(lookup)
             if not addrs:
                 return None
-            self.sf.debug("Addresses returned: " + str(addrs))
+
+            self.sf.debug(f"Addresses returned: {addrs}")
 
             text = None
             for addr in addrs:
                 text = self.reportIP(addr)
-                if text is None:
-                    continue
-                else:
+                if text is not None:
                     break
 
             if text is not None:
@@ -135,7 +164,7 @@ class sfp_honeypot(SpiderFootPlugin):
 
                 evt = SpiderFootEvent(e, text.format(qaddr), self.__name__, parentEvent)
                 self.notifyListeners(evt)
-        except BaseException as e:
+        except Exception as e:
             self.sf.debug("Unable to resolve " + qaddr + " / " + lookup + ": " + str(e))
 
         return None
@@ -146,15 +175,14 @@ class sfp_honeypot(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
         parentEvent = event
-        addrlist = list()
 
         if self.errorState:
             return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_honeypot but did not set an API key!", False)
+            self.sf.error("You enabled sfp_honeypot but did not set an API key!")
             self.errorState = True
             return None
 
@@ -167,9 +195,9 @@ class sfp_honeypot(SpiderFootPlugin):
                 return None
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxnetblock']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxnetblock']))
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxnetblock']))
                     return None
 
         if eventName == 'NETBLOCK_MEMBER':
@@ -177,9 +205,9 @@ class sfp_honeypot(SpiderFootPlugin):
                 return None
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxsubnet']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxsubnet']))
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxsubnet']))
                     return None
 
         if eventName.startswith("NETBLOCK_"):

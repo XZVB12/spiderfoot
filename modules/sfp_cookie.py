@@ -11,19 +11,30 @@
 # -------------------------------------------------------------------------------
 
 import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_cookie(SpiderFootPlugin):
-    """Cookie Extractor:Footprint,Investigate,Passive:Content Analysis::Extract Cookies from HTTP headers."""
+
+    meta = {
+        'name': "Cookie Extractor",
+        'summary': "Extract Cookies from HTTP headers.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
+    optdescs = {}
 
     results = None
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
         self.results = self.tempStorage()
+        self.__dataSource__ = "Target Website"
 
         for opt in list(userOpts.keys()):
             self.opts[opt] = userOpts[opt]
@@ -45,7 +56,7 @@ class sfp_cookie(SpiderFootPlugin):
         eventData = event.data
         eventSource = event.actualSource
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
         if eventSource in self.results:
             return None
         else:
@@ -57,10 +68,10 @@ class sfp_cookie(SpiderFootPlugin):
 
         try:
             jdata = json.loads(eventData)
-            if jdata == None:
+            if jdata is None:
                 return None
-        except BaseException as e:
-            self.sf.error("Received HTTP headers from another module in an unexpected format.", False)
+        except Exception:
+            self.sf.error("Received HTTP headers from another module in an unexpected format.")
             return None
 
         if 'set-cookie' in jdata:

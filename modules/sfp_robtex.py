@@ -12,13 +12,34 @@
 
 import json
 import time
+
 from netaddr import IPNetwork
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_robtex(SpiderFootPlugin):
-    """Robtex:Footprint,Investigate,Passive:Passive DNS::Search Robtex.com for hosts sharing the same IP."""
 
+    meta = {
+        'name': "Robtex",
+        'summary': "Search Robtex.com for hosts sharing the same IP.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Passive DNS"],
+        'dataSource': {
+            'website': "https://www.robtex.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://www.robtex.com/api/"
+            ],
+            'favIcon': "https://www.robtex.com/favicon.ico",
+            'logo': "https://www.robtex.com/favicon.ico",
+            'description': "Robtex is used for various kinds of research of IP numbers, Domain names, etc\n"
+            "Robtex uses various sources to gather public information about "
+            "IP numbers, domain names, host names, Autonomous systems, routes etc. "
+            "It then indexes the data in a big database and provide free access to the data.",
+        }
+    }
 
     # Default options
     opts = {
@@ -65,7 +86,7 @@ class sfp_robtex(SpiderFootPlugin):
 
     # Don't notify me about events from myself
     def watchOpts(self):
-        return [ 'noself' ]
+        return ['noself']
 
     # Handle events sent to this module
     def handleEvent(self, event):
@@ -74,39 +95,39 @@ class sfp_robtex(SpiderFootPlugin):
         eventData = event.data
         self.currentEventSrc = event
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.cohostcount > self.opts['maxcohost']:
-            return None
+            return
 
         if srcModuleName == "sfp_robtex" and eventName == "IP_ADDRESS":
             self.sf.debug("Ignoring " + eventName + ", from self.")
-            return None
+            return
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
 
         if eventName == 'NETBLOCK_OWNER':
             if not self.opts['netblocklookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxnetblock']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxnetblock']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxnetblock']))
+                    return
 
         if eventName == 'NETBLOCK_MEMBER':
             if not self.opts['subnetlookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxsubnet']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxsubnet']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxsubnet']))
+                    return
 
         qrylist = list()
         if eventName.startswith("NETBLOCK_"):
@@ -117,39 +138,36 @@ class sfp_robtex(SpiderFootPlugin):
             qrylist.append(eventData)
             self.results[eventData] = True
 
-        myres = list()
-
         for ip in qrylist:
             if self.checkForStop():
-                return None
+                return
 
             retry = 0
             while retry < 2:
-                res = self.sf.fetchUrl("https://freeapi.robtex.com/ipquery/" + ip,
-                                   timeout=self.opts['_fetchtimeout'])
+                res = self.sf.fetchUrl("https://freeapi.robtex.com/ipquery/" + ip, timeout=self.opts['_fetchtimeout'])
                 if res['code'] == "200":
                     break
                 if res['code'] == "404":
-                    return None
+                    return
                 if res['code'] == "429":
                     # Back off a little further
                     time.sleep(2)
                 retry += 1
 
             if res['content'] is None:
-                self.sf.error("Unable to query robtex API.", False)
+                self.sf.error("Unable to query robtex API.")
                 retry += 1
                 continue
 
             try:
                 data = json.loads(res['content'])
-            except BaseException as e:
-                self.sf.error("Error parsing JSON from robtex API.", False)
-                return None
+            except Exception as e:
+                self.sf.error(f"Error parsing JSON from Robtex API: {e}")
+                return
 
             pas = data.get('pas')
             if not pas:
-                return None
+                return
 
             if len(data.get('pas')) > 0:
                 for r in data.get('pas'):

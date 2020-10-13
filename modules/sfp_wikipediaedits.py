@@ -1,36 +1,56 @@
-#-------------------------------------------------------------------------------
-# Name:         sfp_wikipediaedits
-# Purpose:      Identify edits to Wikipedia articles made from a given IP address
-#               or username.
+# -*- coding: utf-8 -*-
+# -------------------------------------------------------------------------------
+# Name:        sfp_wikipediaedits
+# Purpose:     Identify edits to Wikipedia articles made from a given IP address
+#              or username.
 #
 # Author:      Steve Micallef <steve@binarypool.com>
 #
 # Created:     10/09/2017
 # Copyright:   (c) Steve Micallef
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import datetime
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from html.parser import HTMLParser
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_wikipediaedits(SpiderFootPlugin):
-    """Wikipedia Edits:Footprint,Investigate,Passive:Secondary Networks::Identify edits to Wikipedia articles made from a given IP address or username."""
 
+    meta = {
+        'name': "Wikipedia Edits",
+        'summary': "Identify edits to Wikipedia articles made from a given IP address or username.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Secondary Networks"],
+        'dataSource': {
+            'website': "https://www.wikipedia.org/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://www.mediawiki.org/wiki/API:Tutorial",
+                "https://www.mediawiki.org/wiki/How_to_contribute",
+                "https://www.mediawiki.org/wiki/API:Main_page"
+            ],
+            'favIcon': "https://www.wikipedia.org/static/favicon/wikipedia.ico",
+            'logo': "https://www.wikipedia.org/static/apple-touch/wikipedia.png",
+            'description': "Wikipedia is a multilingual online encyclopedia created and maintained as an "
+            "open collaboration project by a community of volunteer editors, using a wiki-based editing system.",
+        }
+    }
 
-    # Default options
     opts = {
         "days_limit": "365"
     }
 
-    # Option descriptions
     optdescs = {
         "days_limit": "Maximum age of data to be considered valid (0 = unlimited)."
     }
-
-    # Be sure to completely clear any class variables in setup()
-    # or you run the risk of data persisting between scan runs.
 
     results = None
 
@@ -39,37 +59,43 @@ class sfp_wikipediaedits(SpiderFootPlugin):
         self.results = self.tempStorage()
         self.__dataSource__ = "Wikipedia"
 
-        # Clear / reset any other class member variables here
-        # or you risk them persisting between threads.
-
         for opt in list(userOpts.keys()):
             self.opts[opt] = userOpts[opt]
 
-    # What events is this module interested in for input
     def watchedEvents(self):
         return ["IP_ADDRESS", "USERNAME"]
 
-    # What events this module produces
     def producedEvents(self):
         return ["WIKIPEDIA_PAGE_EDIT"]
 
     def query(self, qry):
-        url = "https://en.wikipedia.org/w/api.php?action=feedcontributions&user=" + qry
+        params = {
+            "action": "feedcontributions",
+            "user": qry.encode('raw_unicode_escape').decode("ascii", errors='replace')
+        }
+
         if self.opts['days_limit'] != "0":
             dt = datetime.datetime.now() - datetime.timedelta(days=int(self.opts['days_limit']))
-            y = dt.strftime("%Y")
-            m = dt.strftime("%m")
-            url += "&year=" + y + "&month=" + m
-        res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
-                               useragent="SpiderFoot")
-        if res['code'] in [ "404", "403", "500" ]:
+            params["year"] = dt.strftime("%Y")
+            params["month"] = dt.strftime("%m")
+
+        res = self.sf.fetchUrl(
+            f"https://en.wikipedia.org/w/api.php?{urllib.parse.urlencode(params)}",
+            timeout=self.opts['_fetchtimeout'],
+            useragent="SpiderFoot"
+        )
+
+        if res['code'] in ["404", "403", "500"]:
+            self.sf.debug(f"Unexpected response code {res['code']} from Wikipedia")
+            return None
+
+        if not res['content']:
             return None
 
         links = list()
+
         try:
             parser = HTMLParser()
-            if not res['content']:
-                return None
 
             for line in res['content'].split("\n"):
                 matches = re.findall("<link>(.*?)</link>", line, re.IGNORECASE)
@@ -78,33 +104,32 @@ class sfp_wikipediaedits(SpiderFootPlugin):
                         continue
                     d = parser.unescape(m)
                     links.append(d)
-            return links
+            return set(links)
         except Exception as e:
-            self.sf.error("Error processing response from Wikipedia: " + str(e), False)
+            self.sf.error(f"Error processing response from Wikipedia: {e}")
             return None
 
-    # Handle events sent to this module
     def handleEvent(self, event):
         eventName = event.eventType
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
-        # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
-        else:
-            self.results[eventData] = True
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
+
+        self.results[eventData] = True
 
         data = self.query(eventData)
-        if data == None:
-            return None
 
-        for l in data:
-            e = SpiderFootEvent("WIKIPEDIA_PAGE_EDIT", l,
-                                self.__name__, event)
-            self.notifyListeners(e)
+        if data is None:
+            self.sf.debug(f"No results from Wikipedia for {eventData}")
+            return
+
+        for link in data:
+            evt = SpiderFootEvent("WIKIPEDIA_PAGE_EDIT", link, self.__name__, event)
+            self.notifyListeners(evt)
 
 # End of sfp_wikipediaedits class

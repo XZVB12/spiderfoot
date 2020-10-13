@@ -12,22 +12,30 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 regexps = dict({
     "jQuery": list(['jquery']),  # unlikely false positive
-    "YUI": list(['\/yui\/', 'yui\-', 'yui\.']),
-    "Prototype": list(['\/prototype\/', 'prototype\-', 'prototype\.js']),
-    "ZURB Foundation": list(['\/foundation\/', 'foundation\-', 'foundation\.js']),
-    "Bootstrap": list(['\/bootstrap\/', 'bootstrap\-', 'bootstrap\.js']),
-    "ExtJS": list(['[\'\"\=]ext\.js', 'extjs', '\/ext\/*\.js']),
-    "Mootools": list(['\/mootools\/', 'mootools\-', 'mootools\.js']),
-    "Dojo": list(['\/dojo\/', '[\'\"\=]dojo\-', '[\'\"\=]dojo\.js']),
-    "Wordpress": list(['\/wp-includes\/', '\/wp-content\/'])
+    "YUI": list([r'\/yui\/', r'yui\-', r'yui\.']),
+    "Prototype": list([r'\/prototype\/', r'prototype\-', r'prototype\.js']),
+    "ZURB Foundation": list([r'\/foundation\/', r'foundation\-', r'foundation\.js']),
+    "Bootstrap": list([r'\/bootstrap\/', r'bootstrap\-', r'bootstrap\.js']),
+    "ExtJS": list([r'[\'\"\=]ext\.js', 'extjs', r'\/ext\/*\.js']),
+    "Mootools": list([r'\/mootools\/', r'mootools\-', r'mootools\.js']),
+    "Dojo": list([r'\/dojo\/', r'[\'\"\=]dojo\-', r'[\'\"\=]dojo\.js']),
+    "Wordpress": list([r'\/wp-includes\/', r'\/wp-content\/'])
 })
 
+
 class sfp_webframework(SpiderFootPlugin):
-    """Web Framework Identifier:Footprint,Passive:Content Analysis::Identify the usage of popular web frameworks like jQuery, YUI and others."""
+
+    meta = {
+        'name': "Web Framework Identifier",
+        'summary': "Identify the usage of popular web frameworks like jQuery, YUI and others.",
+        'flags': [""],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
@@ -70,9 +78,9 @@ class sfp_webframework(SpiderFootPlugin):
 
         # We only want web content
         if srcModuleName != "sfp_spider":
-            return None
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventSource not in self.results:
             self.results[eventSource] = list()
@@ -80,7 +88,7 @@ class sfp_webframework(SpiderFootPlugin):
         # We only want web content for pages on the target site
         if not self.getTarget().matches(self.sf.urlFQDN(eventSource)):
             self.sf.debug("Not collecting web content information for external sites.")
-            return None
+            return
 
         for regexpGrp in list(regexps.keys()):
             if regexpGrp in self.results[eventSource]:
@@ -95,7 +103,5 @@ class sfp_webframework(SpiderFootPlugin):
                     evt = SpiderFootEvent("URL_WEB_FRAMEWORK", regexpGrp,
                                           self.__name__, event)
                     self.notifyListeners(evt)
-
-        return None
 
 # End of sfp_webframework class

@@ -14,12 +14,41 @@
 import json
 import re
 import time
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_flickr(SpiderFootPlugin):
-    """Flickr:Footprint,Investigate,Passive:Social Media::Search Flickr for domains, URLs and emails related to the specified domain."""
+
+    meta = {
+        'name': "Flickr",
+        'summary': "Search Flickr for domains, URLs and emails related to the specified domain.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Social Media"],
+        'dataSource': {
+            'website': "https://www.flickr.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://www.flickr.com/services/api/",
+                "https://www.flickr.com/services/developer/api/",
+                "https://code.flickr.net/"
+            ],
+            'favIcon': "https://combo.staticflickr.com/pw/favicon.ico",
+            'logo': "https://combo.staticflickr.com/pw/favicon.ico",
+            'description': "Flickr is almost certainly the best online photo management and sharing application in the world.\n "
+                           "On Flickr, members upload photos, share them securely, supplement their photos with "
+                           "metadata like license information, geo-location, people, tags, etc., "
+                           "and interact with their family, friends, contacts or anyone in the community. "
+                           "Practically all the features on Flickr's various platforms -- web, mobile and desktop -- "
+                           "are accompanied by a longstanding API program. "
+                           "Since 2005, developers have collaborated on top of Flickr's APIs to build fun, creative, "
+                           "and gorgeous experiences around photos that extend beyond Flickr.",
+        }
+    }
 
     # Default options
     opts = {
@@ -52,7 +81,8 @@ class sfp_flickr(SpiderFootPlugin):
 
     # What events this module produces
     def producedEvents(self):
-        return ["EMAILADDR", "INTERNET_NAME", "DOMAIN_NAME", "LINKED_URL_INTERNAL"]
+        return ["EMAILADDR", "EMAILADDR_GENERIC", "INTERNET_NAME",
+                "DOMAIN_NAME", "LINKED_URL_INTERNAL"]
 
     # Retrieve API key
     def retrieveApiKey(self):
@@ -98,8 +128,8 @@ class sfp_flickr(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug("Error processing JSON response: " + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return data
@@ -111,24 +141,25 @@ class sfp_flickr(SpiderFootPlugin):
         eventData = event.data
 
         if eventData in self.results:
+            self.sf.debug(f"Skipping {eventData}, already checked")
             return None
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if srcModuleName == 'sfp_flickr':
-            self.sf.debug("Ignoring " + eventData + ", from self.")
+            self.sf.debug(f"Ignoring {eventData}, from self.")
             return None
 
         # Retrieve API key
         api_key = self.retrieveApiKey()
 
         if not api_key:
-            self.sf.error("Failed to obtain API key", False)
+            self.sf.error("Failed to obtain API key")
             return None
 
-        self.sf.debug("Retrieved API key: " + api_key)
+        self.sf.debug(f"Retrieved API key: {api_key}")
 
         # Query API for event data
         hosts = list()
@@ -155,6 +186,7 @@ class sfp_flickr(SpiderFootPlugin):
             photos = data.get('photos')
 
             if not photos:
+                self.sf.debug("No search results.")
                 return None
 
             # Calculate number of pages to retrieve
@@ -168,7 +200,7 @@ class sfp_flickr(SpiderFootPlugin):
                 if pages > allowed_pages:
                     pages = allowed_pages
 
-            self.sf.info("Parsing page " + str(page) + " of " + str(pages))
+            self.sf.info(f"Parsing page {page} of {pages}")
 
             # Extract data
             for photo in photos.get('photo', list()):
@@ -180,11 +212,16 @@ class sfp_flickr(SpiderFootPlugin):
                     mail_domain = email.lower().split('@')[1]
 
                     if not self.getTarget().matches(mail_domain, includeChildren=True, includeParents=True):
-                        self.sf.debug("Skipped unrelated address: " + email)
+                        self.sf.debug(f"Skipped unrelated address: {email}")
                         continue
 
                     self.sf.info("Found e-mail address: " + email)
-                    evt = SpiderFootEvent("EMAILADDR", email, self.__name__, event)
+                    if email.split("@")[0] in self.opts['_genericusers'].split(","):
+                        evttype = "EMAILADDR_GENERIC"
+                    else:
+                        evttype = "EMAILADDR"
+
+                    evt = SpiderFootEvent(evttype, email, self.__name__, event)
                     self.notifyListeners(evt)
                     self.results[email] = True
 
@@ -196,12 +233,12 @@ class sfp_flickr(SpiderFootPlugin):
                     host = self.sf.urlFQDN(link)
 
                     if not self.getTarget().matches(host, includeChildren=True, includeParents=True):
-                        self.sf.debug("Skipped unrelated link: " + link)
+                        self.sf.debug(f"Skipped unrelated URL: {link}")
                         continue
 
                     hosts.append(host)
 
-                    self.sf.debug("Found a URL: " + link)
+                    self.sf.debug(f"Found a URL: {link}")
                     evt = SpiderFootEvent('LINKED_URL_INTERNAL', link, self.__name__, event)
                     self.notifyListeners(evt)
                     self.results[link] = True
@@ -216,7 +253,7 @@ class sfp_flickr(SpiderFootPlugin):
                 return None
 
             if self.opts['dns_resolve'] and not self.sf.resolveHost(host):
-                self.sf.debug("Host " + host + " could not be resolved")
+                self.sf.debug(f"Host {host} could not be resolved")
                 evt = SpiderFootEvent("INTERNET_NAME_UNRESOLVED", host, self.__name__, event)
                 self.notifyListeners(evt)
                 continue

@@ -14,11 +14,21 @@
 import random
 import threading
 import time
+
 import dns.resolver
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_tldsearch(SpiderFootPlugin):
-    """TLD Searcher:Footprint:DNS:slow:Search all Internet TLDs for domains with the same name as the target (this can be very slow.)"""
+
+    meta = {
+        'name': "TLD Searcher",
+        'summary': "Search all Internet TLDs for domains with the same name as the target (this can be very slow.)",
+        'flags': ["slow"],
+        'useCases': ["Footprint"],
+        'categories': ["DNS"]
+    }
 
     # Default options
     opts = {
@@ -30,7 +40,8 @@ class sfp_tldsearch(SpiderFootPlugin):
     # Option descriptions
     optdescs = {
         'activeonly': "Only report domains that have content (try to fetch the page)?",
-        "skipwildcards": "Skip TLDs and sub-TLDs that have wildcard DNS."
+        "skipwildcards": "Skip TLDs and sub-TLDs that have wildcard DNS.",
+        "_maxthreads": "Maximum threads"
     }
 
     # Internal results tracking
@@ -68,7 +79,7 @@ class sfp_tldsearch(SpiderFootPlugin):
             resolver.nameservers = [self.opts['_dnsserver']]
 
         if self.opts['skipwildcards'] and self.sf.checkDnsWildcard(tld):
-            return None
+            return
 
         try:
             addrs = self.sf.resolveHost(target)
@@ -78,7 +89,7 @@ class sfp_tldsearch(SpiderFootPlugin):
             else:
                 with self.lock:
                     self.tldResults[target] = True
-        except BaseException as e:
+        except Exception:
             with self.lock:
                 self.tldResults[target] = False
 
@@ -121,12 +132,13 @@ class sfp_tldsearch(SpiderFootPlugin):
         # Inform listening modules
         if self.opts['activeonly']:
             if self.checkForStop():
-                return None
+                return
 
             pageContent = self.sf.fetchUrl('http://' + result,
                                            timeout=self.opts['_fetchtimeout'],
                                            useragent=self.opts['_useragent'],
-                                           noLog=True)
+                                           noLog=True,
+                                           verify=False)
             if pageContent['content'] is not None:
                 evt = SpiderFootEvent("SIMILARDOMAIN", result, self.__name__, source)
                 self.notifyListeners(evt)
@@ -136,12 +148,10 @@ class sfp_tldsearch(SpiderFootPlugin):
 
     # Search for similar sounding domains
     def handleEvent(self, event):
-        eventName = event.eventType
-        srcModuleName = event.module
         eventData = event.data
 
         if eventData in self.results:
-            return None
+            return
         else:
             self.results[eventData] = True
 
@@ -150,7 +160,7 @@ class sfp_tldsearch(SpiderFootPlugin):
         targetList = list()
 
         if keyword in self.results:
-            return None
+            return
         else:
             self.results[keyword] = True
 
@@ -173,7 +183,7 @@ class sfp_tldsearch(SpiderFootPlugin):
             tryDomain = keyword + "." + tld
 
             if self.checkForStop():
-                return None
+                return
 
             if len(targetList) <= self.opts['_maxthreads']:
                 targetList.append([tryDomain, tld])
@@ -184,7 +194,5 @@ class sfp_tldsearch(SpiderFootPlugin):
         # Scan whatever may be left over.
         if len(targetList) > 0:
             self.tryTldWrapper(targetList, event)
-
-        return None
 
 # End of sfp_tldsearch class

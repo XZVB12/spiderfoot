@@ -12,10 +12,18 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_names(SpiderFootPlugin):
-    """Human Name Extractor:Footprint,Passive:Content Analysis:errorprone:Attempt to identify human names in fetched content."""
+
+    meta = {
+        'name': "Human Name Extractor",
+        'summary': "Attempt to identify human names in fetched content.",
+        'flags': ["errorprone"],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {
@@ -63,7 +71,7 @@ class sfp_names(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # If the source event is web content, check if the source URL was javascript
         # or CSS, in which case optionally ignore it.
@@ -95,18 +103,18 @@ class sfp_names(SpiderFootPlugin):
                 self.notifyListeners(evt)
                 return None
 
-        # For RAW_RIR_DATA, there are only specific modules we 
+        # For RAW_RIR_DATA, there are only specific modules we
         # expect to see RELEVANT names within.
         if eventName == "RAW_RIR_DATA":
-            if srcModuleName not in [ "sfp_arin", "sfp_builtwith", "sfp_clearbit",
-                                      "sfp_fullcontact", "sfp_github", "sfp_hunter",
-                                      "sfp_opencorporates", "sfp_slideshare",
-                                      "sfp_twitter", "sfp_venmo", "sfp_instagram"]:
+            if srcModuleName not in ["sfp_arin", "sfp_builtwith", "sfp_clearbit",
+                                     "sfp_fullcontact", "sfp_github", "sfp_hunter",
+                                     "sfp_opencorporates", "sfp_slideshare",
+                                     "sfp_twitter", "sfp_venmo", "sfp_instagram"]:
                 self.sf.debug("Ignoring RAW_RIR_DATA from untrusted module.")
                 return None
 
         # Stage 1: Find things that look (very vaguely) like names
-        rx = re.compile("([A-Z][a-z�������������]+)\s+.?.?\s?([A-Z][�������������a-zA-Z\'\-]+)")
+        rx = re.compile(r"([A-Z][a-z�������������]+)\s+.?.?\s?([A-Z][�������������a-zA-Z\'\-]+)")
         m = re.findall(rx, eventData)
         for r in m:
             # Start off each match as 0 points.
@@ -126,7 +134,7 @@ class sfp_names(SpiderFootPlugin):
 
             # If both words are not in the dictionary, add 75 points.
             if first not in self.d and second not in self.d:
-                self.sf.debug("Both first and second names are not in the dictionary, so high chance of name: (" + first +":" + second +").")
+                self.sf.debug(f"Both first and second names are not in the dictionary, so high chance of name: ({first}:{second}).")
                 p += 75
                 notindict = True
             else:

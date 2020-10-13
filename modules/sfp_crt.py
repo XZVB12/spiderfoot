@@ -13,11 +13,31 @@
 
 import json
 import urllib.parse
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_crt(SpiderFootPlugin):
-    """Certificate Transparency:Footprint,Investigate,Passive:Search Engines::Gather hostnames from historical certificates in crt.sh."""
+
+    meta = {
+        'name': "Certificate Transparency",
+        'summary': "Gather hostnames from historical certificates in crt.sh.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://crt.sh/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://sectigo.com/",
+                "https://github.com/crtsh"
+            ],
+            'favIcon': "https://crt.sh/sectigo_s.png",
+            'logo': "https://crt.sh/sectigo_s.png",
+            'description': "Enter an Identity (Domain Name, Organization Name, etc), "
+            "a Certificate Fingerprint (SHA-1 or SHA-256) or a crt.sh ID",
+        }
+    }
 
     opts = {
         'verify': True,
@@ -28,10 +48,12 @@ class sfp_crt(SpiderFootPlugin):
     }
 
     results = None
+    cert_ids = None
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
         self.results = self.tempStorage()
+        self.cert_ids = self.tempStorage()
 
         for opt in list(userOpts.keys()):
             self.opts[opt] = userOpts[opt]
@@ -60,7 +82,7 @@ class sfp_crt(SpiderFootPlugin):
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         params = {
             'q': '%.' + str(eventData),
@@ -77,8 +99,8 @@ class sfp_crt(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug('Error processing JSON response: ' + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         if data is None or len(data) == 0:
@@ -87,14 +109,19 @@ class sfp_crt(SpiderFootPlugin):
         evt = SpiderFootEvent("RAW_RIR_DATA", str(data), self.__name__, event)
         self.notifyListeners(evt)
 
-        cert_ids = list()
         domains = list()
+        fetch_certs = list()
 
         for cert_info in data:
             cert_id = cert_info.get('id')
 
             if cert_id:
-                cert_ids.append(cert_id)
+                # Don't process the same cert twice
+                if cert_id in self.cert_ids:
+                    continue
+                self.cert_ids[cert_id] = True
+
+            fetch_certs.append(cert_id)
 
             domain = cert_info.get('name_value')
             if '\n' in domain:
@@ -121,7 +148,7 @@ class sfp_crt(SpiderFootPlugin):
                 evt_type = 'AFFILIATE_INTERNET_NAME'
 
             if self.opts['verify'] and not self.sf.resolveHost(domain):
-                self.sf.debug("Host " + domain + " could not be resolved")
+                self.sf.debug(f"Host {domain} could not be resolved")
                 evt_type += '_UNRESOLVED'
 
             evt = SpiderFootEvent(evt_type, domain, self.__name__, event)
@@ -135,7 +162,7 @@ class sfp_crt(SpiderFootPlugin):
                     evt = SpiderFootEvent('DOMAIN_NAME', domain, self.__name__, event)
                     self.notifyListeners(evt)
 
-        for cert_id in set(cert_ids):
+        for cert_id in fetch_certs:
             if self.checkForStop():
                 return None
 
@@ -153,7 +180,7 @@ class sfp_crt(SpiderFootPlugin):
 
             try:
                 cert = self.sf.parseCert(str(res['content']))
-            except BaseException as e:
+            except Exception as e:
                 self.sf.info('Error parsing certificate: ' + str(e))
                 continue
 

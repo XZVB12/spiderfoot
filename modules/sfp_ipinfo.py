@@ -12,11 +12,37 @@
 # -------------------------------------------------------------------------------
 
 import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_ipinfo(SpiderFootPlugin):
-    """IPInfo.io:Footprint,Investigate,Passive:Real World:apikey:Identifies the physical location of IP addresses identified using ipinfo.io."""
+
+    meta = {
+        'name': "IPInfo.io",
+        'summary': "Identifies the physical location of IP addresses identified using ipinfo.io.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Real World"],
+        'dataSource': {
+            'website': "https://ipinfo.io",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://ipinfo.io/developers"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://ipinfo.io/",
+                "Sign up for a free account",
+                "Navigate to https://ipinfo.io/account",
+                "The API key is listed above 'is your access token'"
+            ],
+            'favIcon': "https://ipinfo.io/static/favicon-96x96.png?v3",
+            'logo': "https://ipinfo.io/static/deviceicons/android-icon-96x96.png",
+            'description': "The Trusted Source for IP Address Data.\n"
+            "With IPinfo, you can pinpoint your users’ locations, customize their experiences, "
+            "prevent fraud, ensure compliance, and so much more.",
+        }
+    }
 
     # Default options
     opts = {
@@ -58,7 +84,7 @@ class sfp_ipinfo(SpiderFootPlugin):
                                headers=headers)
 
         if res['code'] == "429":
-            self.sf.error("You are being rate-limited by ipinfo.io.", False)
+            self.sf.error("You are being rate-limited by ipinfo.io.")
             self.errorState = True
             return None
 
@@ -69,7 +95,7 @@ class sfp_ipinfo(SpiderFootPlugin):
         try:
             result = json.loads(res['content'])
         except Exception as e:
-            self.sf.debug("Error processing JSON response.")
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         return result
@@ -81,36 +107,34 @@ class sfp_ipinfo(SpiderFootPlugin):
         eventData = event.data
 
         if self.errorState:
-            return None
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_ipinfo but did not set an API key!", False)
+            self.sf.error("You enabled sfp_ipinfo but did not set an API key!")
             self.errorState = True
-            return None
+            return
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
 
         self.results[eventData] = True
 
         data = self.queryIP(eventData)
 
         if data is None:
-            return None
+            return
 
         if 'country' not in data:
-            return None
+            return
 
         location = ', '.join([_f for _f in [data.get('city'), data.get('region'), data.get('country')] if _f])
         self.sf.info("Found GeoIP for " + eventData + ": " + location)
 
         evt = SpiderFootEvent("GEOINFO", location, self.__name__, event)
         self.notifyListeners(evt)
-
-        return None
 
 # End of sfp_ipinfo class

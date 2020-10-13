@@ -11,14 +11,21 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_creditcard(SpiderFootPlugin):
-    """Credit Card Number Extractor:Footprint,Investigate,Passive:Content Analysis::Identify Credit Card Numbers in any data"""
+
+    meta = {
+        'name': "Credit Card Number Extractor",
+        'summary': "Identify Credit Card Numbers in any data",
+        'flags': ["errorprone"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options.
     opts = {
-         # Options specific to this module
     }
 
     # Option descriptions.
@@ -47,8 +54,7 @@ class sfp_creditcard(SpiderFootPlugin):
 
     # What events is this module interested in for input
     def watchedEvents(self):
-        return ["TARGET_WEB_CONTENT", "DARKNET_MENTION_CONTENT",
-                "LEAKSITE_CONTENT" ]
+        return ["DARKNET_MENTION_CONTENT", "LEAKSITE_CONTENT"]
 
     # What events this module produces
     def producedEvents(self):
@@ -65,7 +71,7 @@ class sfp_creditcard(SpiderFootPlugin):
             return None
 
         # event was received.
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # Extract Credit Card numbers
         creditCards = self.sf.parseCreditCards(eventData)
@@ -73,14 +79,14 @@ class sfp_creditcard(SpiderFootPlugin):
         myres = list()
         for creditCard in creditCards:
             evttype = "CREDIT_CARD_NUMBER"
-            
+
             self.sf.info("Found credit card number : " + creditCard)
 
             if creditCard in myres:
                 self.sf.debug("Already found from this source")
                 continue
             myres.append(creditCard)
-            
+
             evt = SpiderFootEvent(evttype, creditCard, self.__name__, event)
             if event.moduleDataSource:
                 evt.moduleDataSource = event.moduleDataSource
@@ -88,5 +94,4 @@ class sfp_creditcard(SpiderFootPlugin):
                 evt.moduleDataSource = "Unknown"
             self.notifyListeners(evt)
 
-        return None
 # End of sfp_creditcard class

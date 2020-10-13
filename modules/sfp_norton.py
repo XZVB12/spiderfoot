@@ -12,11 +12,19 @@
 # -------------------------------------------------------------------------------
 
 import dns.resolver
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_norton(SpiderFootPlugin):
-    """Norton ConnectSafe:Investigate,Passive:Reputation Systems::Check if a host would be blocked by Norton ConnectSafe DNS"""
+
+    meta = {
+        'name': "Norton ConnectSafe",
+        'summary': "Check if a host would be blocked by Norton ConnectSafe DNS",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"]
+    }
 
     # Default options
     opts = {
@@ -48,13 +56,13 @@ class sfp_norton(SpiderFootPlugin):
 
     def queryAddr(self, qaddr):
         res = dns.resolver.Resolver()
-        res.nameservers = [ "199.85.126.20", "199.85.127.20" ]
+        res.nameservers = ["199.85.126.20", "199.85.127.20"]
 
         try:
-            addrs = res.query(qaddr)
+            addrs = res.resolve(qaddr)
             self.sf.debug("Addresses returned: " + str(addrs))
-        except BaseException as e:
-            self.sf.debug("Unable to resolve " + qaddr)
+        except Exception:
+            self.sf.debug(f"Unable to resolve {qaddr}")
             return False
 
         if addrs:
@@ -69,7 +77,7 @@ class sfp_norton(SpiderFootPlugin):
         parentEvent = event
         resolved = False
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -80,7 +88,7 @@ class sfp_norton(SpiderFootPlugin):
         try:
             if self.sf.resolveHost(eventData):
                 resolved = True
-        except BaseException as e:
+        except Exception:
             return None
 
         if resolved:

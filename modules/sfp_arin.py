@@ -12,15 +12,44 @@
 # -------------------------------------------------------------------------------
 
 import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_arin(SpiderFootPlugin):
-    """ARIN:Footprint,Investigate,Passive:Public Registries::Queries ARIN registry for contact information."""
 
+    meta = {
+        'name': "ARIN",
+        'summary': "Queries ARIN registry for contact information.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Public Registries"],
+        'dataSource': {
+            'website': "https://www.arin.net/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://www.arin.net/resources/",
+                "https://www.arin.net/reference/",
+                "https://www.arin.net/participate/",
+                "https://www.arin.net/resources/guide/request/",
+                "https://www.arin.net/resources/registry/transfers/",
+                "https://www.arin.net/resources/guide/ipv6/"
+            ],
+            'favIcon': "https://www.arin.net/img/favicon.ico",
+            'logo': "https://www.arin.net/img/logo-stnd.svg",
+            'description': "ARIN is a nonprofit, member-based organization that administers IP addresses & "
+            "ASNs in support of the operation and growth of the Internet.\n"
+            "Established in December 1997 as a Regional Internet Registry, "
+            "the American Registry for Internet Numbers (ARIN) is responsible for the management "
+            "and distribution of Internet number resources such as Internet Protocol (IP) addresses "
+            "and Autonomous System Numbers (ASNs). ARIN manages these resources within its service region, "
+            "which is comprised of Canada, the United States, and many Caribbean and North Atlantic islands.",
+        }
+    }
 
     # Default options
     opts = {}
+    optdescs = {}
 
     results = None
     currentEventSrc = None
@@ -51,7 +80,7 @@ class sfp_arin(SpiderFootPlugin):
         if url in self.memCache:
             res = self.memCache[url]
         else:
-            head = { "Accept": "application/json" }
+            head = {"Accept": "application/json"}
             res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
                                    useragent=self.opts['_useragent'], headers=head)
             if res['content'] is not None:
@@ -63,7 +92,6 @@ class sfp_arin(SpiderFootPlugin):
 
     # Owner information about an AS
     def query(self, qtype, value):
-        ownerinfo = dict()
         url = "https://whois.arin.net/rest/"
 
         if qtype == "domain":
@@ -77,7 +105,7 @@ class sfp_arin(SpiderFootPlugin):
                     fname = lname
                     lname = t
                 url += "pocs;first=" + fname + ";last=" + lname
-        except BaseException as e:
+        except Exception as e:
             self.sf.debug("Couldn't process name: " + value + " (" + str(e) + ")")
             return None
 
@@ -93,7 +121,7 @@ class sfp_arin(SpiderFootPlugin):
             j = json.loads(res['content'])
             return j
         except Exception as e:
-            self.sf.debug("Error processing JSON response: " + str(e))
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
     # Handle events sent to this module
@@ -103,19 +131,19 @@ class sfp_arin(SpiderFootPlugin):
         eventData = event.data
         self.currentEventSrc = event
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
-            return None
-        else:
-            self.results[eventData] = True
+            self.sf.debug(f"Skipping {eventData}, already checked.")
+            return
+
+        self.results[eventData] = True
 
         if eventName == "DOMAIN_NAME":
             ret = self.query("domain", eventData)
             if not ret:
-                return None
+                return
             if "pocs" in ret:
                 if "pocRef" in ret['pocs']:
                     ref = list()
@@ -145,7 +173,7 @@ class sfp_arin(SpiderFootPlugin):
         if eventName == "HUMAN_NAME":
             ret = self.query("name", eventData)
             if not ret:
-                return None
+                return
             if "pocs" in ret:
                 if "pocRef" in ret['pocs']:
                     ref = list()

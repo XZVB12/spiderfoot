@@ -13,12 +13,36 @@
 # -------------------------------------------------------------------------------
 
 from netaddr import IPNetwork
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_sorbs(SpiderFootPlugin):
-    """SORBS:Investigate,Passive:Reputation Systems::Query the SORBS database for open relays, open proxies, vulnerable servers, etc."""
 
+    meta = {
+        'name': "SORBS",
+        'summary': "Query the SORBS database for open relays, open proxies, vulnerable servers, etc.",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "http://www.sorbs.net/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "http://www.sorbs.net/information/proxy.shtml",
+                "http://www.sorbs.net/information/spamfo/",
+                "http://www.sorbs.net/general/using.shtml"
+            ],
+            'favIcon': "https://www.google.com/s2/favicons?domain=http://www.sorbs.net/",
+            'logo': "http://www.sorbs.net/img/pix.gif",
+            'description': "The Spam and Open Relay Blocking System (SORBS) was conceived as an anti-spam project "
+            "where a daemon would check \"on-the-fly\", all servers from which it received email "
+            "to determine if that email was sent via various types of proxy and open-relay servers.\n"
+            "The SORBS (Spam and Open Relay Blocking System) provides free access to its "
+            "DNS-based Block List (DNSBL) to effectively block email from more than 12 million host servers "
+            "known to disseminate spam, phishing attacks and other forms of malicious email.",
+        }
+    }
 
     # Default options
     opts = {
@@ -119,7 +143,7 @@ class sfp_sorbs(SpiderFootPlugin):
                     evt = SpiderFootEvent(e, text, self.__name__, parentEvent)
                     self.notifyListeners(evt)
 
-            except BaseException as e:
+            except Exception as e:
                 self.sf.debug("Unable to resolve " + qaddr + " / " + lookup + ": " + str(e))
 
         return None
@@ -130,9 +154,8 @@ class sfp_sorbs(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
         parentEvent = event
-        addrlist = list()
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -140,28 +163,28 @@ class sfp_sorbs(SpiderFootPlugin):
 
         if eventName == 'NETBLOCK_OWNER':
             if not self.opts['netblocklookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxnetblock']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxnetblock']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxnetblock']))
+                    return
 
         if eventName == 'NETBLOCK_MEMBER':
             if not self.opts['subnetlookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxsubnet']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxsubnet']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxsubnet']))
+                    return
 
         if eventName.startswith("NETBLOCK_"):
             for addr in IPNetwork(eventData):
                 if self.checkForStop():
-                    return None
+                    return
                 self.queryAddr(str(addr), parentEvent)
         else:
             self.queryAddr(eventData, parentEvent)

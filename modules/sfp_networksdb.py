@@ -13,12 +13,40 @@
 
 import json
 import time
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_networksdb(SpiderFootPlugin):
-    """NetworksDB:Footprint,Investigate,Passive:Passive DNS:apikey:Search NetworksDB.io API for IP address and domain information."""
 
+    meta = {
+        'name': "NetworksDB",
+        'summary': "Search NetworksDB.io API for IP address and domain information.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Passive DNS"],
+        'dataSource': {
+            'website': "https://networksdb.io/",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://networksdb.io/api/docs"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://networksdb.io/api/order/free",
+                "Register a free account",
+                "Click on 'Generate a Free API Key'",
+                "The API key is listed under 'API Key: Free plan'"
+            ],
+            'favIcon': "https://networksdb.io/img/favicon/favicon-96x96.png",
+            'logo': "https://networksdb.io/img/logo.png",
+            'description': "Our database contains information about the public IPv4 and IPv6 addresses, "
+            "networks and domains owned by companies and organisations across the world "
+            "along with city-level IP geolocation data and autonomous system information.",
+        }
+    }
     # Default options
     opts = {
         'api_key': '',
@@ -193,12 +221,12 @@ class sfp_networksdb(SpiderFootPlugin):
     def parseApiResponse(self, res):
         # Future proofing - NetworksDB does not implement rate limiting
         if res['code'] == '429':
-            self.sf.error("You are being rate-limited by NetworksDB", False)
+            self.sf.error("You are being rate-limited by NetworksDB")
             self.errorState = True
             return None
 
         if res['code'] == '403':
-            self.sf.error("Authentication failed", False)
+            self.sf.error("Authentication failed")
             self.errorState = True
             return None
 
@@ -208,14 +236,14 @@ class sfp_networksdb(SpiderFootPlugin):
         try:
             data = json.loads(res['content'])
         except Exception as e:
-            self.sf.error("Error processing JSON response from NetworksDB.", False)
+            self.sf.error(f"Error processing JSON response from NetworksDB: {e}")
             return None
 
         if data.get('warning'):
             self.sf.debug("Received warning from NetworksDB: " + data.get('warning'))
 
         if data.get('error'):
-            self.sf.error("Received error from NetworksDB: " + data.get('error'), False)
+            self.sf.error("Received error from NetworksDB: " + data.get('error'))
 
         return data
 
@@ -232,13 +260,13 @@ class sfp_networksdb(SpiderFootPlugin):
             return None
 
         if self.opts['api_key'] == '':
-            self.sf.error("You enabled sfp_networksdb but did not set an API key!", False)
+            self.sf.error("You enabled sfp_networksdb but did not set an API key!")
             self.errorState = True
             return None
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventName in ["IP_ADDRESS", "IPV6_ADDRESS"]:
             data = self.queryIpInfo(eventData)
@@ -252,7 +280,7 @@ class sfp_networksdb(SpiderFootPlugin):
                 network = data.get('network')
                 if network:
                     cidr = network.get('cidr')
-                    if cidr and cidr != 'N/A':
+                    if cidr and cidr != 'N/A' and self.sf.validIpNetwork(cidr):
                         evt = SpiderFootEvent('NETBLOCK_MEMBER', cidr, self.__name__, event)
                         self.notifyListeners(evt)
 

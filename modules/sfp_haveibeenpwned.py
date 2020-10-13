@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:         sfp_haveibeenpwned
 # Purpose:      Query haveibeenpwned.com to see if an e-mail account has been hacked.
 #
@@ -7,15 +7,35 @@
 # Created:     19/02/2015
 # Copyright:   (c) Steve Micallef
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import json
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_haveibeenpwned(SpiderFootPlugin):
-    """HaveIBeenPwned:Footprint,Investigate,Passive:Leaks, Dumps and Breaches:apikey:Check HaveIBeenPwned.com for hacked e-mail addresses identified in breaches."""
 
+    meta = {
+        'name': "HaveIBeenPwned",
+        'summary': "Check HaveIBeenPwned.com for hacked e-mail addresses identified in breaches.",
+        'flags': ["apikey"],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Leaks, Dumps and Breaches"],
+        'dataSource': {
+            'website': "https://haveibeenpwned.com/",
+            'model': "COMMERCIAL_ONLY",
+            'references': [
+                "https://haveibeenpwned.com/API/v3",
+                "https://haveibeenpwned.com/FAQs"
+            ],
+            'apiKeyInstructions': [],
+            'favIcon': "https://haveibeenpwned.com/favicon.ico",
+            'logo': "https://haveibeenpwned.com/favicon.ico",
+            'description': "Check if you have an account that has been compromised in a data breach.",
+        }
+    }
 
     # Default options
     opts = {
@@ -55,12 +75,12 @@ class sfp_haveibeenpwned(SpiderFootPlugin):
     def query(self, qry):
         ret = None
         if self.opts['api_key']:
-            v = "3"
+            version = "3"
         else:
-            v = "2"
+            version = "2"
 
-        url = "https://haveibeenpwned.com/api/v" + v + "/breachedaccount/" + qry
-        hdrs = { "Accept": "application/vnd.haveibeenpwned.v" + v + "+json" }
+        url = f"https://haveibeenpwned.com/api/v{version}/breachedaccount/{qry}"
+        hdrs = {"Accept": f"application/vnd.haveibeenpwned.v{version}+json"}
         retry = 0
 
         if self.opts['api_key']:
@@ -84,14 +104,14 @@ class sfp_haveibeenpwned(SpiderFootPlugin):
             retry += 1
 
             if res['code'] == "401":
-                self.sf.error("Failed to authenticate key with HaveIBeenPwned.com.", False)
+                self.sf.error("Failed to authenticate key with HaveIBeenPwned.com.")
                 self.errorState = True
                 return None
 
         try:
             ret = json.loads(res['content'])
         except Exception as e:
-            self.sf.error("Error processing JSON response from HaveIBeenPwned?: " + str(e), False)
+            self.sf.error(f"Error processing JSON response from HaveIBeenPwned?: {e}")
             return None
 
         return ret
@@ -105,17 +125,17 @@ class sfp_haveibeenpwned(SpiderFootPlugin):
         if self.errorState:
             return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
         else:
             self.results[eventData] = True
 
         data = self.query(eventData)
-        if data == None:
+        if data is None:
             return None
 
         for n in data:
@@ -124,8 +144,8 @@ class sfp_haveibeenpwned(SpiderFootPlugin):
                     site = n["Title"]
                 else:
                     site = n["Name"]
-            except BaseException as e:
-                self.sf.debug("Unable to parse result from HaveIBeenPwned?")
+            except Exception as e:
+                self.sf.debug(f"Unable to parse result from HaveIBeenPwned?: {e}")
                 continue
 
             evt = eventName + "_COMPROMISED"

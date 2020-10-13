@@ -11,15 +11,36 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
+import json
 import re
 
-import json
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_commoncrawl(SpiderFootPlugin):
-    """CommonCrawl:Footprint,Passive:Search Engines::Searches for URLs found through CommonCrawl.org."""
 
+    meta = {
+        'name': "CommonCrawl",
+        'summary': "Searches for URLs found through CommonCrawl.org.",
+        'flags': [""],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "http://commoncrawl.org/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://commoncrawl.org/the-data/get-started/",
+                "https://commoncrawl.org/the-data/examples/",
+                "https://commoncrawl.org/the-data/tutorials/"
+            ],
+            'favIcon': "https://commoncrawl.org/wp-content/themes/commoncrawl/img/favicon.png",
+            'logo': "https://commoncrawl.org/wp-content/themes/commoncrawl/img/favicon.png",
+            'description': "We build and maintain an open repository of web crawl data that can be accessed and analyzed by anyone.\n"
+            "Everyone should have the opportunity to indulge their curiosities, analyze the world and pursue brilliant ideas. "
+            "Small startups or even individuals can now access high quality crawl data that was previously "
+            "only available to large search engine corporations.",
+        }
+    }
 
     # Default options
     opts = {
@@ -47,18 +68,17 @@ class sfp_commoncrawl(SpiderFootPlugin):
     def search(self, target):
         ret = list()
         for index in self.indexBase:
-            url = "https://index.commoncrawl.org/" + index + \
-                  "-index?url=" + target + "/*&output=json"
+            url = f"https://index.commoncrawl.org/{index}-index?url={target}/*&output=json"
             res = self.sf.fetchUrl(url, timeout=60,
                                    useragent="SpiderFoot")
 
-            if res['code'] in [ "400", "401", "402", "403", "404" ]:
-                self.sf.error("CommonCrawl search doesn't seem to be available.", False)
+            if res['code'] in ["400", "401", "402", "403", "404"]:
+                self.sf.error("CommonCrawl search doesn't seem to be available.")
                 self.errorState = True
                 return None
 
             if not res['content']:
-                self.sf.error("CommonCrawl search doesn't seem to be available.", False)
+                self.sf.error("CommonCrawl search doesn't seem to be available.")
                 self.errorState = True
                 return None
 
@@ -71,18 +91,17 @@ class sfp_commoncrawl(SpiderFootPlugin):
         res = self.sf.fetchUrl(url, timeout=60,
                                useragent="SpiderFoot")
 
-        if res['code'] in [ "400", "401", "402", "403", "404" ]:
-            self.sf.error("CommonCrawl index collection doesn't seem to be available.", False)
+        if res['code'] in ["400", "401", "402", "403", "404"]:
+            self.sf.error("CommonCrawl index collection doesn't seem to be available.")
             self.errorState = True
             return list()
 
         if not res['content']:
-            self.sf.error("CommonCrawl index collection doesn't seem to be available.", False)
+            self.sf.error("CommonCrawl index collection doesn't seem to be available.")
             self.errorState = True
             return list()
 
-        indexes = re.findall(".*(CC-MAIN-\d+-\d+).*", res['content'])
-        highest = 0
+        indexes = re.findall(r".*(CC-MAIN-\d+-\d+).*", res['content'])
         indexlist = dict()
         for m in indexes:
             ms = m.replace("CC-MAIN-", "").replace("-", "")
@@ -91,7 +110,7 @@ class sfp_commoncrawl(SpiderFootPlugin):
         topindexes = sorted(list(indexlist.keys()), reverse=True)[0:self.opts['indexes']]
 
         if len(topindexes) < self.opts['indexes']:
-            self.sf.error("Not able to find latest CommonCrawl indexes.", False)
+            self.sf.error("Not able to find latest CommonCrawl indexes.")
             self.errorState = True
             return list()
 
@@ -117,7 +136,7 @@ class sfp_commoncrawl(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.errorState:
             return None
@@ -131,16 +150,16 @@ class sfp_commoncrawl(SpiderFootPlugin):
             self.indexBase = self.getLatestIndexes()
 
         if not self.indexBase:
-            self.sf.error("Unable to fetch CommonCrawl index.", False)
+            self.sf.error("Unable to fetch CommonCrawl index.")
             return None
 
         if len(self.indexBase) == 0:
-            self.sf.error("Unable to fetch CommonCrawl index.", False)
+            self.sf.error("Unable to fetch CommonCrawl index.")
             return None
 
         data = self.search(eventData)
         if not data:
-            self.sf.error("Unable to obtain content from CommonCrawl.", False)
+            self.sf.error("Unable to obtain content from CommonCrawl.")
             return None
 
         sent = list()
@@ -155,6 +174,10 @@ class sfp_commoncrawl(SpiderFootPlugin):
                     link = json.loads(line)
                     if 'url' not in link:
                         continue
+
+                    # CommonCrawl sometimes returns hosts with a trailing . after the domain
+                    link['url'] = link['url'].replace(eventData + ".", eventData)
+
                     if link['url'] in sent:
                         continue
                     sent.append(link['url'])
@@ -162,8 +185,8 @@ class sfp_commoncrawl(SpiderFootPlugin):
                     evt = SpiderFootEvent("LINKED_URL_INTERNAL", link['url'],
                                           self.__name__, event)
                     self.notifyListeners(evt)
-            except BaseException as e:
-                self.sf.error("Malformed JSON from CommonCrawl.org: " + str(e), False)
-                return None
+            except Exception as e:
+                self.sf.error("Malformed JSON from CommonCrawl.org: " + str(e))
+                return
 
 # End of sfp_commoncrawl class

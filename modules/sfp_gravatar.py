@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        sfp_gravatar
 # Purpose:     SpiderFoot plug-in to search Gravatar API for an email address
 #              and retrieve user information, including username, name, phone
@@ -9,15 +9,37 @@
 # Created:     2019-05-26
 # Copyright:   (c) bcoles 2019
 # Licence:     GPL
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-import json
 import hashlib
+import json
 import time
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_gravatar(SpiderFootPlugin):
-    """Gravatar:Footprint,Investigate,Passive:Social Media::Retrieve user information from Gravatar API."""
+
+    meta = {
+        'name': "Gravatar",
+        'summary': "Retrieve user information from Gravatar API.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Social Media"],
+        'dataSource': {
+            'website': "https://secure.gravatar.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://secure.gravatar.com/site/implement/"
+            ],
+            'favIcon': "https://secure.gravatar.com/favicon.ico",
+            'logo': "https://secure.gravatar.com/favicon.ico",
+            'description': "Your Gravatar is an image that follows you from site to site "
+            "appearing beside your name when you do things like comment or post on a blog.\n"
+            "A Gravatar is a Globally Recognized Avatar. You upload it and create your profile just once, "
+            "and then when you participate in any Gravatar-enabled site, your Gravatar image will automatically follow you there.",
+        }
+    }
 
     # Default options
     opts = {
@@ -32,7 +54,6 @@ class sfp_gravatar(SpiderFootPlugin):
 
     def setup(self, sfc, userOpts=dict()):
         self.sf = sfc
-        self.__dataSource__ = 'Gravatar'
         self.results = self.tempStorage()
         self.reportedUsers = self.tempStorage()
 
@@ -45,15 +66,15 @@ class sfp_gravatar(SpiderFootPlugin):
 
     # What events this module produces
     def producedEvents(self):
-        return ['RAW_RIR_DATA', 'HUMAN_NAME', 'USERNAME',
-                'EMAILADDR', 'PHONE_NUMBER', 'GEOINFO',
+        return ['RAW_RIR_DATA', 'USERNAME',
+                'EMAILADDR', 'EMAILADDR_GENERIC', 'PHONE_NUMBER', 'GEOINFO',
                 'ACCOUNT_EXTERNAL_OWNED', 'SOCIAL_MEDIA']
 
     # Query Gravatar API for the specified email address
     # https://secure.gravatar.com/site/implement/
     # https://secure.gravatar.com/site/implement/profiles/
     def query(self, qry):
-        email_hash = hashlib.md5(qry.encode('utf-8', errors='replace').lower()).hexdigest() # nosec
+        email_hash = hashlib.md5(qry.encode('utf-8', errors='replace').lower()).hexdigest()  # nosec
         output = 'json'
 
         res = self.sf.fetchUrl("https://secure.gravatar.com/" + email_hash + '.' + output,
@@ -71,8 +92,8 @@ class sfp_gravatar(SpiderFootPlugin):
 
         try:
             data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug('Error processing JSON response: ' + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response: {e}")
             return None
 
         if data.get('entry') is None or len(data.get('entry')) == 0:
@@ -91,7 +112,7 @@ class sfp_gravatar(SpiderFootPlugin):
 
         self.results[eventData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         data = self.query(eventData)
 
@@ -116,18 +137,20 @@ class sfp_gravatar(SpiderFootPlugin):
                 names = data.get('name')
 
             for name in names:
-                if name.get('formatted') is not None:
-                    evt = SpiderFootEvent("HUMAN_NAME", name.get('formatted'), self.__name__, event)
+                full_name = name.get('formatted')
+                if full_name:
+                    evt = SpiderFootEvent("RAW_RIR_DATA", f"Possible full name: {full_name}", self.__name__, event)
                     self.notifyListeners(evt)
 
+        # TODO: re-enable once location validation is implemented
         # location can not be trusted
-        #if data.get('currentLocation') is not None:
-        #    location = data.get('currentLocation')
-        #    if len(location) < 3 or len(location) > 100:
-        #        self.sf.debug("Skipping likely invalid location.")
-        #    else:
-        #        evt = SpiderFootEvent("GEOINFO", location, self.__name__, event)
-        #        self.notifyListeners(evt)
+        # if data.get('currentLocation') is not None:
+        #     location = data.get('currentLocation')
+        #     if len(location) < 3 or len(location) > 100:
+        #         self.sf.debug("Skipping likely invalid location.")
+        #     else:
+        #         evt = SpiderFootEvent("GEOINFO", location, self.__name__, event)
+        #         self.notifyListeners(evt)
 
         if data.get('phoneNumbers') is not None:
             for number in data.get('phoneNumbers'):
@@ -137,8 +160,16 @@ class sfp_gravatar(SpiderFootPlugin):
 
         if data.get('emails') is not None:
             for email in data.get('emails'):
-                if email.get('value') is not None and email.get('value') != eventData:
-                    evt = SpiderFootEvent("EMAILADDR", email.get('value'), self.__name__, event)
+                em = email.get('value')
+                if not em:
+                    continue
+                if self.sf.validEmail(em) and em != eventData:
+                    if em.split("@")[0] in self.opts['_genericusers'].split(","):
+                        evttype = "EMAILADDR_GENERIC"
+                    else:
+                        evttype = "EMAILADDR"
+
+                    evt = SpiderFootEvent(evttype, em, self.__name__, event)
                     self.notifyListeners(evt)
 
         if data.get('ims') is not None:
@@ -153,7 +184,6 @@ class sfp_gravatar(SpiderFootPlugin):
                     evt = SpiderFootEvent("USERNAME", v, self.__name__, event)
                     self.notifyListeners(evt)
                     self.reportedUsers[v] = True
-
 
         if data.get('accounts') is not None:
             for account in data.get('accounts'):

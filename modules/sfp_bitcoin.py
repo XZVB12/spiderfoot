@@ -11,16 +11,26 @@
 # Licence:     GPL
 # -------------------------------------------------------------------------------
 
-import re
 import codecs
+import re
 from hashlib import sha256
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_bitcoin(SpiderFootPlugin):
-    """Bitcoin Finder:Footprint,Investigate,Passive:Content Analysis::Identify bitcoin addresses in scraped webpages."""
+
+    meta = {
+        'name': "Bitcoin Finder",
+        'summary': "Identify bitcoin addresses in scraped webpages.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
+    optdescs = {}
 
     results = None
 
@@ -43,7 +53,7 @@ class sfp_bitcoin(SpiderFootPlugin):
 
     def to_bytes(self, n, length):
         h = '%x' % n
-        s = codecs.decode(('0'*(len(h) % 2) + h).zfill(length*2), "hex")
+        s = codecs.decode(('0' * (len(h) % 2) + h).zfill(length * 2), "hex")
         return s
 
     def decode_base58(self, bc, length):
@@ -69,16 +79,14 @@ class sfp_bitcoin(SpiderFootPlugin):
         else:
             self.results[sourceData] = True
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # thanks to https://stackoverflow.com/questions/21683680/regex-to-match-bitcoin-addresses
-        matches = re.findall("[\s:=\>]([13][a-km-zA-HJ-NP-Z1-9]{25,34})", eventData)
+        matches = re.findall(r"[\s:=\>]([13][a-km-zA-HJ-NP-Z1-9]{25,34})", eventData)
         for m in matches:
             self.sf.debug("Bitcoin potential match: " + m)
             if self.check_bc(m):
                 evt = SpiderFootEvent("BITCOIN_ADDRESS", m, self.__name__, event)
                 self.notifyListeners(evt)
-
-        return None
 
 # End of sfp_bitcoin class

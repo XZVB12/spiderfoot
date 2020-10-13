@@ -12,18 +12,43 @@
 
 import json
 import re
-
 import time
-import urllib.request, urllib.parse, urllib.error
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_fringeproject(SpiderFootPlugin):
-    """Fringe Project:Investigate,Footprint,Passive:Search Engines::Obtain network information from Fringe Project API."""
+
+    meta = {
+        'name': "Fringe Project",
+        'summary': "Obtain network information from Fringe Project API.",
+        'flags': [""],
+        'useCases': ["Investigate", "Footprint", "Passive"],
+        'categories': ["Search Engines"],
+        'dataSource': {
+            'website': "https://fringeproject.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://docs.fringeproject.com/"
+            ],
+            'favIcon': "https://fringeproject.com/favicon.png",
+            'logo': "https://fringeproject.com/favicon.png",
+            'description': "Discover the Right Data for Your Security Assessment.\n"
+            "FringeProject allows you to scan and search through various source of information to discover assets and vulnerabilities.\n"
+            "We parse your data and add it to our runner. "
+            "It does active and passive scanning to find new assets on the Internet.",
+        }
+    }
 
     opts = {
+        'verify': True
     }
 
     optdescs = {
+        'verify': "Verify hosts resolve before reporting them."
     }
 
     results = None
@@ -41,7 +66,8 @@ class sfp_fringeproject(SpiderFootPlugin):
 
     def producedEvents(self):
         return ['INTERNET_NAME', 'LINKED_URL_INTERNAL', 'DOMAIN_NAME',
-                'TCP_PORT_OPEN', 'SOFTWARE_USED', 'RAW_RIR_DATA']
+                'TCP_PORT_OPEN', 'SOFTWARE_USED', 'RAW_RIR_DATA',
+                'INTERNET_NAME_UNRESOLVED']
 
     def query(self, qry):
         params = {
@@ -59,8 +85,8 @@ class sfp_fringeproject(SpiderFootPlugin):
 
         try:
             json_data = json.loads(res['content'])
-        except BaseException as e:
-            self.sf.debug("Error processing JSON response from Fringe Project: " + str(e))
+        except Exception as e:
+            self.sf.debug(f"Error processing JSON response from Fringe Project: {e}")
             return None
 
         data = json_data.get('results')
@@ -79,14 +105,14 @@ class sfp_fringeproject(SpiderFootPlugin):
         if self.errorState:
             return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if srcModuleName == 'sfp_fringeproject':
             self.sf.debug("Ignoring " + eventData + ", from self.")
             return None
 
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
 
         self.results[eventData] = True
@@ -139,7 +165,7 @@ class sfp_fringeproject(SpiderFootPlugin):
             for tag in tags:
                 try:
                     port = re.findall(r'^port:([0-9]+)', tag)
-                except BaseException as e:
+                except Exception:
                     self.sf.debug("Didn't get sane data from FringeProject.")
                     continue
 
@@ -148,8 +174,13 @@ class sfp_fringeproject(SpiderFootPlugin):
                     self.notifyListeners(evt)
 
         for host in set(hosts):
-            evt = SpiderFootEvent('INTERNET_NAME', host, self.__name__, event)
+            if self.opts["verify"] and not self.sf.resolveHost(host):
+                self.sf.debug(f"Host {host} could not be resolved.")
+                evt = SpiderFootEvent("INTERNET_NAME_UNRESOLVED", host, self.__name__, event)
+            else:
+                evt = SpiderFootEvent("INTERNET_NAME", host, self.__name__, event)
             self.notifyListeners(evt)
+
             if self.sf.isDomain(host, self.opts['_internettlds']):
                 evt = SpiderFootEvent('DOMAIN_NAME', host, self.__name__, event)
                 self.notifyListeners(evt)

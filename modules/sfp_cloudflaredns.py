@@ -12,11 +12,32 @@
 # -------------------------------------------------------------------------------
 
 import dns.resolver
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_cloudflaredns(SpiderFootPlugin):
-    """CloudFlare Malware DNS:Investigate,Passive:Reputation Systems::Check if a host would be blocked by CloudFlare Malware-blocking DNS"""
+
+    meta = {
+        'name': "CloudFlare Malware DNS",
+        'summary': "Check if a host would be blocked by CloudFlare Malware-blocking DNS",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://www.cloudflare.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://developers.cloudflare.com/1.1.1.1/1.1.1.1-for-families/"
+            ],
+            'favIcon': "https://www.cloudflare.com/img/favicon/favicon-32x32.png",
+            'logo': "https://www.cloudflare.com/img/logo-web-badges/cf-logo-on-white-bg.svg",
+            'description': "1.1.1.1 for Families is the easiest way to add a layer of protection to "
+            "your home network and protect it from malware and adult content. "
+            "1.1.1.1 for Families leverages Cloudflare’s global network to ensure "
+            "that it is fast and secure around the world.",
+        }
+    }
 
     # Default options
     opts = {
@@ -48,13 +69,13 @@ class sfp_cloudflaredns(SpiderFootPlugin):
 
     def queryAddr(self, qaddr):
         res = dns.resolver.Resolver()
-        res.nameservers = [ "1.1.1.2", "1.0.0.2" ]
+        res.nameservers = ["1.1.1.2", "1.0.0.2"]
 
         try:
-            addrs = res.query(qaddr)
+            addrs = res.resolve(qaddr)
             self.sf.debug("Addresses returned: " + str(addrs))
-        except BaseException as e:
-            self.sf.debug("Unable to resolve " + qaddr)
+        except Exception:
+            self.sf.debug(f"Unable to resolve {qaddr}")
             return False
 
         if addrs:
@@ -74,7 +95,7 @@ class sfp_cloudflaredns(SpiderFootPlugin):
         parentEvent = event
         resolved = False
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -85,7 +106,7 @@ class sfp_cloudflaredns(SpiderFootPlugin):
         try:
             if self.sf.resolveHost(eventData):
                 resolved = True
-        except BaseException as e:
+        except Exception:
             return None
 
         if resolved:

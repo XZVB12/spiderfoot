@@ -11,14 +11,45 @@
 # -------------------------------------------------------------------------------
 
 import json
-from datetime import datetime
 import time
+from datetime import datetime
+
 from netaddr import IPNetwork
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_greynoise(SpiderFootPlugin):
-    """Greynoise:Investigate,Passive:Reputation Systems:apikey:Obtain information from Greynoise.io's Enterprise API."""
 
+    meta = {
+        'name': "Greynoise",
+        'summary': "Obtain information from Greynoise.io's Enterprise API.",
+        'flags': ["apikey"],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://greynoise.io/",
+            'model': "FREE_AUTH_LIMITED",
+            'references': [
+                "https://docs.greynoise.io/",
+                "https://greynoise.io/start",
+                "https://greynoise.io/faq"
+            ],
+            'apiKeyInstructions': [
+                "Visit https://greynoise.io/start",
+                "Sign up for a free account",
+                "Navigate to https://viz.greynoise.io/account",
+                "The API key is listed under 'API Key'"
+            ],
+            'favIcon': "https://images.squarespace-cdn.com/content/v1/59c94f7de5dd5bc27643cfec/1515180784460-Q9F9GZ2FAIS3RY2UTGWN/ke17ZwdGBToddI8pDm48kFHWzgSH27ZAa1xr1ZK0Wg-oCXeSvxnTEQmG4uwOsdIceAoHiyRoc52GMN5_2H8Wp5iYt049DnwfYKhjLn0DeccIKHlHqVEMKuKBm52PGcc4mK60CANOrFfnj5Qv8IlCgw/favicon.ico?format=",
+            'logo': "https://images.squarespace-cdn.com/content/59c94f7de5dd5bc27643cfec/1516136002680-2TPB58LXCMAYDIYAAVS7/grey+noise+%28grey%29trans.png?format=1500w&content-type=image%2Fpng",
+            'description': "At GreyNoise, we collect and analyze untargeted, widespread, "
+            "and opportunistic scan and attack activity that reaches every server directly connected to the Internet. "
+            "Mass scanners (such as Shodan and Censys), search engines, bots, worms, "
+            "and crawlers generate logs and events omnidirectionally on every IP address in the IPv4 space. "
+            "GreyNoise gives you the ability to filter this useless noise out.",
+        }
+    }
 
     # Default options
     opts = {
@@ -28,7 +59,7 @@ class sfp_greynoise(SpiderFootPlugin):
         'maxnetblock': 24,
         'subnetlookup': True,
         'maxsubnet': 24
-        #'asnlookup': True
+        # 'asnlookup': True
     }
 
     # Option descriptions
@@ -39,7 +70,7 @@ class sfp_greynoise(SpiderFootPlugin):
         'maxnetblock': "If looking up owned netblocks, the maximum netblock size to look up all IPs within (CIDR value, 24 = /24, 16 = /16, etc.)",
         'subnetlookup': "Look up subnets which your target is a part of for blacklisting?",
         'maxsubnet': "If looking up subnets, the maximum subnet size to look up all the IPs within (CIDR value, 24 = /24, 16 = /16, etc.)"
-        #'asnlookup': "Look up ASNs that your target is a member of?"
+        # 'asnlookup': "Look up ASNs that your target is a member of?"
     }
 
     # Be sure to completely clear any class variables in setup()
@@ -68,25 +99,23 @@ class sfp_greynoise(SpiderFootPlugin):
         return ["MALICIOUS_IPADDR", "MALICIOUS_ASN", "MALICIOUS_SUBNET",
                 "MALICIOUS_AFFILIATE_IPADDR", "MALICIOUS_NETBLOCK",
                 "COMPANY_NAME", "GEOINFO", "BGP_AS_MEMBER", "OPERATING_SYSTEM",
-                "RAW_RIR_DATA" ]
+                "RAW_RIR_DATA"]
 
     def queryIP(self, qry):
-        ret = None
-
-        header = { "key": self.opts['api_key'] }
-        url = "https://" + "enterprise.api.greynoise.io/v2/experimental/gnql?query=" + qry
+        header = {"key": self.opts['api_key']}
+        url = "https://enterprise.api.greynoise.io/v2/experimental/gnql?query=" + qry
         res = self.sf.fetchUrl(url, timeout=self.opts['_fetchtimeout'],
                                useragent="SpiderFoot", headers=header)
 
-        if res['code'] not in [ "200" ]:
-            self.sf.error("Greynoise API key seems to have been rejected or you have exceeded usage limits.", False)
+        if res['code'] not in ["200"]:
+            self.sf.error("Greynoise API key seems to have been rejected or you have exceeded usage limits.")
             self.errorState = True
             return None
 
         try:
             info = json.loads(res['content'])
         except Exception as e:
-            self.sf.error("Error processing JSON response from Greynoise.", False)
+            self.sf.error(f"Error processing JSON response from Greynoise: {e}")
             return None
 
         return info
@@ -100,16 +129,16 @@ class sfp_greynoise(SpiderFootPlugin):
         if self.errorState:
             return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if self.opts['api_key'] == "":
-            self.sf.error("You enabled sfp_greynoise but did not set an API key!", False)
+            self.sf.error("You enabled sfp_greynoise but did not set an API key!")
             self.errorState = True
             return None
 
         # Don't look up stuff twice
         if eventData in self.results:
-            self.sf.debug("Skipping " + eventData + " as already mapped.")
+            self.sf.debug(f"Skipping {eventData}, already checked.")
             return None
         else:
             self.results[eventData] = True
@@ -119,9 +148,9 @@ class sfp_greynoise(SpiderFootPlugin):
                 return None
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxnetblock']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxnetblock']))
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxnetblock']))
                     return None
 
         if eventName == 'NETBLOCK_MEMBER':
@@ -129,9 +158,9 @@ class sfp_greynoise(SpiderFootPlugin):
                 return None
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxsubnet']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxsubnet']))
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxsubnet']))
                     return None
 
         if eventName == 'IP_ADDRESS' or eventName.startswith('NETBLOCK_'):

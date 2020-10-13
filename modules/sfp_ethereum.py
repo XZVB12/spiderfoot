@@ -13,13 +13,22 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_ethereum(SpiderFootPlugin):
-    """Ethereum Address Extractor:Footprint,Investigate,Passive:Content Analysis::Identify ethereum addresses in scraped webpages."""
+
+    meta = {
+        'name': "Ethereum Address Extractor",
+        'summary': "Identify ethereum addresses in scraped webpages.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
+    optdescs = {}
 
     results = None
 
@@ -48,19 +57,17 @@ class sfp_ethereum(SpiderFootPlugin):
         sourceData = self.sf.hashstring(eventData)
 
         if sourceData in self.results:
-            return None
-        else:
-            self.results[sourceData] = True
+            return
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.results[sourceData] = True
+
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         # thanks to https://stackoverflow.com/questions/21683680/regex-to-match-ethereum-addresses
-        matches = re.findall("[\s:=\>](0x[a-fA-F0-9]{40})", eventData)
+        matches = re.findall(r"[\s:=\>](0x[a-fA-F0-9]{40})", eventData)
         for m in matches:
             self.sf.debug("Ethereum address match: " + m)
             evt = SpiderFootEvent("ETHEREUM_ADDRESS", m, self.__name__, event)
             self.notifyListeners(evt)
-
-        return None
 
 # End of sfp_ethereum class

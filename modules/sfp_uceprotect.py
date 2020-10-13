@@ -13,12 +13,31 @@
 # -------------------------------------------------------------------------------
 
 from netaddr import IPNetwork
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_uceprotect(SpiderFootPlugin):
-    """UCEPROTECT:Investigate,Passive:Reputation Systems::Query the UCEPROTECT databases for open relays, open proxies, vulnerable servers, etc."""
 
+    meta = {
+        'name': "UCEPROTECT",
+        'summary': "Query the UCEPROTECT databases for open relays, open proxies, vulnerable servers, etc.",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "http://www.uceprotect.net/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "http://www.uceprotect.net/en/index.php?m=6&s=0",
+                "http://www.uceprotect.net/en/index.php?m=13&s=0",
+                "http://www.uceprotect.net/en/rblcheck.php"
+            ],
+            'favIcon': "https://www.google.com/s2/favicons?domain=http://www.uceprotect.net/",
+            'logo': "http://www.uceprotect.net/en/logo.gif",
+            'description': "UCE Protect is a DNS Blacklisting service whose mission is to stop mail abuse globally.",
+        }
+    }
 
     # Default options
     opts = {
@@ -76,7 +95,7 @@ class sfp_uceprotect(SpiderFootPlugin):
 
         for domain in self.checks:
             if self.checkForStop():
-                return None
+                return
 
             try:
                 lookup = self.reverseAddr(qaddr) + "." + domain
@@ -114,10 +133,8 @@ class sfp_uceprotect(SpiderFootPlugin):
                     evt = SpiderFootEvent(e, text, self.__name__, parentEvent)
                     self.notifyListeners(evt)
 
-            except BaseException as e:
+            except Exception as e:
                 self.sf.debug("Unable to resolve " + qaddr + " / " + lookup + ": " + str(e))
-
-        return None
 
     # Handle events sent to this module
     def handleEvent(self, event):
@@ -125,38 +142,38 @@ class sfp_uceprotect(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
         parentEvent = event
-        addrlist = list()
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
-            return None
+            return
+
         self.results[eventData] = True
 
         if eventName == 'NETBLOCK_OWNER':
             if not self.opts['netblocklookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxnetblock']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxnetblock']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxnetblock']))
+                    return
 
         if eventName == 'NETBLOCK_MEMBER':
             if not self.opts['subnetlookup']:
-                return None
+                return
             else:
                 if IPNetwork(eventData).prefixlen < self.opts['maxsubnet']:
-                    self.sf.debug("Network size bigger than permitted: " +
-                                  str(IPNetwork(eventData).prefixlen) + " > " +
-                                  str(self.opts['maxsubnet']))
-                    return None
+                    self.sf.debug("Network size bigger than permitted: "
+                                  + str(IPNetwork(eventData).prefixlen) + " > "
+                                  + str(self.opts['maxsubnet']))
+                    return
 
         if eventName.startswith("NETBLOCK_"):
             for addr in IPNetwork(eventData):
                 if self.checkForStop():
-                    return None
+                    return
                 self.queryAddr(str(addr), parentEvent)
         else:
             self.queryAddr(eventData, parentEvent)

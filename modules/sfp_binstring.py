@@ -11,11 +11,19 @@
 # -------------------------------------------------------------------------------
 
 import string
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_binstring(SpiderFootPlugin):
-    """Binary String Extractor:Footprint:Content Analysis:errorprone:Attempt to identify strings in binary content."""
 
+    meta = {
+        'name': "Binary String Extractor",
+        'summary': "Attempt to identify strings in binary content.",
+        'flags': ["errorprone"],
+        'useCases': ["Footprint"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {
@@ -24,8 +32,8 @@ class sfp_binstring(SpiderFootPlugin):
         'maxfilesize': 1000000,
         'usedict': True,
         'fileexts': ['png', 'gif', 'jpg', 'jpeg', 'tiff', 'tif',
-                    'ico', 'flv', 'mp4', 'mp3', 'avi', 'mpg',
-                    'mpeg', 'dat', 'mov', 'swf', 'exe', 'bin'],
+                     'ico', 'flv', 'mp4', 'mp3', 'avi', 'mpg',
+                     'mpeg', 'dat', 'mov', 'swf', 'exe', 'bin'],
         'filterchars': '#}{|%^&*()=+,;[]~'
     }
 
@@ -113,7 +121,7 @@ class sfp_binstring(SpiderFootPlugin):
         srcModuleName = event.module
         eventData = event.data
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -128,7 +136,8 @@ class sfp_binstring(SpiderFootPlugin):
                 res = self.sf.fetchUrl(eventData,
                                        useragent=self.opts['_useragent'],
                                        dontMangle=True,
-                                       sizeLimit=self.opts['maxfilesize'])
+                                       sizeLimit=self.opts['maxfilesize'],
+                                       verify=False)
 
         if res:
             self.sf.debug("Searching for strings")

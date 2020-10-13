@@ -13,10 +13,18 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
+
 
 class sfp_company(SpiderFootPlugin):
-    """Company Name Extractor:Footprint,Investigate,Passive:Content Analysis::Identify company names in any obtained data."""
+
+    meta = {
+        'name': "Company Name Extractor",
+        'summary': "Identify company names in any obtained data.",
+        'flags': [""],
+        'useCases': ["Footprint", "Investigate", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {
@@ -56,28 +64,28 @@ class sfp_company(SpiderFootPlugin):
         # Various ways to identify companies in text
         # Support up to three word company names with each starting with
         # a capital letter, allowing for hyphens brackets and numbers within.
-        pattern_prefix = "(?=[,;:\'\">\(= ]|^)\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.][^ \"\';:><]*)?\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.]?[^ \"\';:><]*|[Aa]nd)?\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.]?[^ \"\';:><]*)?\s+"
+        pattern_prefix = r"(?=[,;:\'\">\(= ]|^)\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.][^ \"\';:><]*)?\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.]?[^ \"\';:><]*|[Aa]nd)?\s?([A-Z0-9\(\)][A-Za-z0-9\-&,\.]?[^ \"\';:><]*)?\s+"
         pattern_match_re = [
-            'LLC', 'L\.L\.C\.?', 'AG', 'A\.G\.?', 'GmbH', 'Pty\.?\s+Ltd\.?',
-            'Ltd\.?', 'Pte\.?', 'Inc\.?', 'INC\.?', 'Incorporated', 'Foundation',
-            'Corp\.?', 'Corporation', 'SA', 'S\.A\.?', 'SIA', 'BV', 'B\.V\.?',
-            'NV', 'N\.V\.?' 'PLC', 'Limited', 'Pvt\.?\s+Ltd\.?', 'SARL' ]
+            'LLC', r'L\.L\.C\.?', 'AG', r'A\.G\.?', 'GmbH', r'Pty\.?\s+Ltd\.?',
+            r'Ltd\.?', r'Pte\.?', r'Inc\.?', r'INC\.?', 'Incorporated', 'Foundation',
+            r'Corp\.?', 'Corporation', 'SA', r'S\.A\.?', 'SIA', 'BV', r'B\.V\.?',
+            'NV', r'N\.V\.?' 'PLC', 'Limited', r'Pvt\.?\s+Ltd\.?', 'SARL']
         pattern_match = [
             'LLC', 'L.L.C', 'AG', 'A.G', 'GmbH', 'Pty',
             'Ltd', 'Pte', 'Inc', 'INC', 'Foundation',
             'Corp', 'SA', 'S.A', 'SIA', 'BV', 'B.V',
-            'NV', 'N.V' 'PLC', 'Limited', 'Pvt.', 'SARL' ]
+            'NV', 'N.V' 'PLC', 'Limited', 'Pvt.', 'SARL']
 
-        pattern_suffix = "(?=[ \.,:<\)\'\"]|[$\n\r])"
+        pattern_suffix = r"(?=[ \.,:<\)\'\"]|[$\n\r])"
 
         # Filter out anything from the company name which matches the below
         filterpatterns = [
             "Copyright",
-            "\d{4}" # To catch years
+            r"\d{4}"  # To catch years
         ]
 
         # Don't re-parse company names
-        if eventName in [ "COMPANY_NAME", "AFFILIATE_COMPANY_NAME" ]:
+        if eventName in ["COMPANY_NAME", "AFFILIATE_COMPANY_NAME"]:
             return None
 
         if eventName == "TARGET_WEB_CONTENT":
@@ -86,26 +94,14 @@ class sfp_company(SpiderFootPlugin):
                 self.sf.debug("Ignoring web content from CSS/JS.")
                 return None
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName + ": " + str(len(eventData)) + " bytes.")
-
-        if type(eventData) != str:
-            try:
-                if type(eventData) in [ list, dict ]:
-                    eventData = str(eventData)
-                else:
-                    self.sf.debug("Unhandled type to find company names: " + \
-                                  str(type(eventData)))
-                    return None
-            except BaseException as e:
-                self.sf.debug("Unable to convert list/dict to string: " + str(e))
-                return None
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName} ({len(eventData)} bytes)")
 
         # Strip out everything before the O=
         try:
             if eventName == "SSL_CERTIFICATE_ISSUED":
                 eventData = eventData.split("O=")[1]
-        except BaseException as e:
-                self.sf.debug("Couldn't strip out O=, proceeding anyway...")
+        except Exception:
+            self.sf.debug("Couldn't strip out 'O=' from certificate issuer, proceeding anyway...")
 
         # Find chunks of text containing what might be a company name first.
         # This is to avoid running very expensive regexps on large chunks of
@@ -120,7 +116,7 @@ class sfp_company(SpiderFootPlugin):
                     start = 0
                 end = m + 10
                 if end >= len(eventData):
-                    end = len(eventData)-1
+                    end = len(eventData) - 1
                 chunks.append(eventData[start:end])
                 offset = m + len(pat)
                 m = eventData.find(pat, offset)
@@ -128,7 +124,7 @@ class sfp_company(SpiderFootPlugin):
         myres = list()
         for chunk in chunks:
             for pat in pattern_match_re:
-                matches = re.findall(pattern_prefix + "(" + pat + ")" + pattern_suffix, chunk, re.MULTILINE|re.DOTALL)
+                matches = re.findall(pattern_prefix + "(" + pat + ")" + pattern_suffix, chunk, re.MULTILINE | re.DOTALL)
                 for match in matches:
                     matched = 0
                     for m in match:
@@ -146,7 +142,7 @@ class sfp_company(SpiderFootPlugin):
                         if not flt:
                             fullcompany += m + " "
 
-                    fullcompany = re.sub("\s+", " ", fullcompany.strip())
+                    fullcompany = re.sub(r"\s+", " ", fullcompany.strip())
 
                     self.sf.info("Found company name: " + fullcompany)
                     if fullcompany in myres:

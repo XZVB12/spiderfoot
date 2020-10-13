@@ -12,11 +12,34 @@
 # -------------------------------------------------------------------------------
 
 import dns.resolver
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 
 class sfp_opendns(SpiderFootPlugin):
-    """OpenDNS:Investigate,Passive:Reputation Systems::Check if a host would be blocked by OpenDNS DNS"""
+
+    meta = {
+        'name': "OpenDNS",
+        'summary': "Check if a host would be blocked by OpenDNS DNS",
+        'flags': [""],
+        'useCases': ["Investigate", "Passive"],
+        'categories': ["Reputation Systems"],
+        'dataSource': {
+            'website': "https://www.opendns.com/",
+            'model': "FREE_NOAUTH_UNLIMITED",
+            'references': [
+                "https://support.opendns.com/hc/en-us",
+                "https://support.opendns.com/hc/en-us/categories/204012807-OpenDNS-Knowledge-Base",
+                "https://support.opendns.com/hc/en-us/categories/204012907-OpenDNS-Device-Configuration"
+            ],
+            'favIcon': "https://www.google.com/s2/favicons?domain=https://www.opendns.com/",
+            'logo': "https://d15ni2z53ptwz9.cloudfront.net/opendns-www/img/logo-opendns.png",
+            'description': "Cisco Umbrella provides protection against threats on the internet such as "
+            "malware, phishing, and ransomware.\n"
+            "OpenDNS is a suite of consumer products aimed at "
+            "making your internet faster, safer, and more reliable.",
+        }
+    }
 
     # Default options
     opts = {
@@ -48,13 +71,13 @@ class sfp_opendns(SpiderFootPlugin):
 
     def queryAddr(self, qaddr):
         res = dns.resolver.Resolver()
-        res.nameservers = [ "208.67.222.222", "208.67.220.220" ]
+        res.nameservers = ["208.67.222.222", "208.67.220.220"]
 
         try:
-            addrs = res.query(qaddr)
+            addrs = res.resolve(qaddr)
             self.sf.debug("Addresses returned: " + str(addrs))
-        except BaseException as e:
-            self.sf.debug("Unable to resolve " + qaddr)
+        except Exception:
+            self.sf.debug(f"Unable to resolve {qaddr}")
             return False
 
         if addrs:
@@ -69,7 +92,7 @@ class sfp_opendns(SpiderFootPlugin):
         parentEvent = event
         resolved = False
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventData in self.results:
             return None
@@ -80,7 +103,7 @@ class sfp_opendns(SpiderFootPlugin):
         try:
             if self.sf.resolveHost(eventData):
                 resolved = True
-        except BaseException as e:
+        except Exception:
             return None
 
         if resolved:

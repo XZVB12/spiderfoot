@@ -12,22 +12,30 @@
 
 import re
 
-from sflib import SpiderFoot, SpiderFootPlugin, SpiderFootEvent
+from spiderfoot import SpiderFootEvent, SpiderFootPlugin
 
 # Taken from Google Dorks on exploit-db.com
 regexps = dict({
     "PHP Error": ["PHP pase error", "PHP warning", "PHP error",
                   "unexpected T_VARIABLE", "warning: failed opening", "include_path="],
     "Generic Error": ["Internal Server Error", "Incorrect syntax"],
-    "Oracle Error": ["ORA-\d+", "TNS:.?no listen"],
+    "Oracle Error": [r"ORA-\d+", "TNS:.?no listen"],
     "ASP Error": ["NET_SessionId"],
-    "MySQL Error": ["mysql_query\(", "mysql_connect\("],
-    "ODBC Error": ["\[ODBC SQL"]
+    "MySQL Error": [r"mysql_query\(", r"mysql_connect\("],
+    "ODBC Error": [r"\[ODBC SQL"]
 
 })
 
+
 class sfp_errors(SpiderFootPlugin):
-    """Error String Extractor:Footprint,Passive:Content Analysis::Identify common error messages in content like SQL errors, etc."""
+
+    meta = {
+        'name': "Error String Extractor",
+        'summary': "Identify common error messages in content like SQL errors, etc.",
+        'flags': [""],
+        'useCases': ["Footprint", "Passive"],
+        'categories': ["Content Analysis"]
+    }
 
     # Default options
     opts = {}
@@ -73,7 +81,7 @@ class sfp_errors(SpiderFootPlugin):
 
         eventSource = event.actualSource
 
-        self.sf.debug("Received event, " + eventName + ", from " + srcModuleName)
+        self.sf.debug(f"Received event, {eventName}, from {srcModuleName}")
 
         if eventSource not in list(self.results.keys()):
             self.results[eventSource] = list()
@@ -96,12 +104,5 @@ class sfp_errors(SpiderFootPlugin):
                     evt = SpiderFootEvent("ERROR_MESSAGE", regexpGrp,
                                           self.__name__, event)
                     self.notifyListeners(evt)
-
-        return None
-
-    # If you intend for this module to act on its own (e.g. not solely rely
-    # on events from other modules, then you need to have a start() method
-    # and within that method call self.checkForStop() to see if you've been
-    # politely asked by the controller to stop your activities (user abort.)
 
 # End of sfp_errors class
